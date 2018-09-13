@@ -1,6 +1,7 @@
 #!/home/yuandong/anaconda/bin
 import argparse
 import imp
+from collections import OrderedDict
 
 def param_to_arg(param, env_vars=None):
     ''' Turn param to "--key value ", if value is bool, then
@@ -46,8 +47,8 @@ def iter_params(params):
         else:
             # For each value of the first key,
             #   (key, value) + iter_params(other param)
-            first_key = sorted(params.keys())[0]
-            dup_params = dict(params)
+            first_key = next(iter(params.keys()))
+            dup_params = OrderedDict(params)
             del dup_params[first_key]
 
             if first_key.startswith("__sub"):
@@ -75,6 +76,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('param_file', type=str, help="Parameter file")
     parser.add_argument("--idx", type=int, default=None)
+    parser.add_argument("--num_per_group", type=int, default=1)
 
     args = parser.parse_args()
 
@@ -88,5 +90,7 @@ if __name__ == "__main__":
             arg = param_to_arg(param)
             print(arg)
     else:
-        print(param_to_arg(params[args.idx]))
+        offset = args.idx * args.num_per_group
+        for i in range(offset, min(offset + args.num_per_group, len(params))): 
+            print(param_to_arg(params[i]))
 
