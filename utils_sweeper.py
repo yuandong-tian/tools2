@@ -77,11 +77,12 @@ if __name__ == "__main__":
     parser.add_argument('param_file', type=str, help="Parameter file")
     parser.add_argument("--idx", type=int, default=None)
     parser.add_argument("--num_per_group", type=int, default=1)
+    parser.add_argument("--param_args", type=str, default=None)
 
     args = parser.parse_args()
 
     custom_params = imp.load_source("custom_params", args.param_file)
-    params = custom_params.params
+    params = custom_params.params(args.param_args)
 
     params = list(iter_params(params))
 
