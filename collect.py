@@ -1,12 +1,16 @@
-from collections import defaultdict
+from multiprocessing import Pool
 import os
-import re
-import json
 import glob
+import json
 
-task_matcher = re.compile(r"\s*([0-9]+:|)\s(args|stats):")
+def parse_file(input):
+    import re
+    import json
 
-def parse_file(prefix, f, data):
+    task_matcher = re.compile(r"\s*([0-9]+:|)\s*(args|stats):")
+
+    prefix, f = input
+    data = {}
     arg_id = -1
     for line in open(f):
         m = task_matcher.match(line)
@@ -16,29 +20,54 @@ def parse_file(prefix, f, data):
         if t == 'args':
             arg_id += 1
         key = "%s-%s-%d"% (prefix, task_id, arg_id)
+        if key not in data:
+            data[key] = dict(stats=[], args=[])
         data[key][t].append(json.loads(line[len(m.group(0)):]))
+    return data
+
+def parse_files(inputs):
+    p = Pool(64)
+    data = p.map(parse_file, inputs)
+    # data = [ parse_file(input) for input in inputs ]
+
+    result = {}
+    for d in data:
+        result.update(d)
+    return result
 
 def get(job_names):
     root = "/checkpoint/yuandong/jobs"
-    data = defaultdict(lambda: dict(args=[], stats=[]))
+    inputs = []
     for job_name in job_names:
         for f in glob.glob(os.path.join(root, job_name, "*.out")):
             prefix = job_name + "-" + os.path.basename(f)
-            parse_file(prefix, f, data)
-    return data
+            inputs.append((prefix, f))
+
+    return parse_files(inputs)
 
 def get_aml(job_names):
     json_root = "/home/yuandong/tools/sweeper/jobs"
     root = "/mnt/vol/gfsai-flash-east/ai-group/users/yuandong/rts"
-    
-    data = defaultdict(lambda: dict(args=[], stats=[]))
+
+    inputs = []
     for job_name in job_names:
         with open(os.path.join(json_root, job_name + ".json")) as f:
-            data = json.load(f)
-        for job in data["jobs"]:
+            jobs = json.load(f)
+        for job in jobs["jobs"]:
             if not "id" in job: continue
             f = "%d/output%d-0.log" % (job["id"], job["job_idx"])
-            parse_file(root, f, data)
+            prefix = "%d-%d" % (job["id"], job["job_idx"])
+            inputs.append((prefix, os.path.join(root, f)))
 
-    return data
-            
+    return parse_files(inputs)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--json_prefix', type=str, help="Json file")
+
+    args = parser.parse_args()
+
+    data = get_aml([args.json_prefix])
+    print(data.keys())
+
