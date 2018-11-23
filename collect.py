@@ -61,6 +61,30 @@ def get_aml(job_names):
 
     return parse_files(inputs)
 
+class AccuStats:
+    def __init__(self):
+        self.x = None
+        self.xsqr = None
+        self.counter = None
+
+    def feed(self, v):
+        l = v.shape[0]
+        if self.x is None:
+            self.x = v
+            self.xsqr = v * v
+            self.counter = np.ones(l)
+        else:
+            lmin = min(l, self.x.shape[0])
+            self.x[:lmin] += v[:lmin]
+            self.xsqr[:lmin] += v[:lmin] * v[:lmin]
+            self.counter[:lmin] += 1
+
+    def get_mean_std(self):
+        mean = self.x / self.counter
+        std = np.sqrt(self.xsqr / self.counter - mean ** 2)
+        return mean, std
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
