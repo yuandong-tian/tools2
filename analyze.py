@@ -38,7 +38,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
     parser.add_argument("--output_dir", type=str, default=os.path.join(checkpoint_path, "summary"))
-    parser.add_argument("--update_all", action="store_true", default="Update all existing summaries")
+    parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
 
     args = parser.parse_args()
 
