@@ -1,6 +1,7 @@
 #!/home/yuandong/anaconda/bin
 import argparse
 import imp
+import random
 from collections import OrderedDict
 
 def param_to_arg(param, env_vars=None):
@@ -71,6 +72,38 @@ def list2dict(l):
     return { p[0] : p[1] for p in l }
 
 
+class ParamHandler:
+    def __init__(self, param_file, num_per_group, param_args=None, shuffle=True):
+        custom_params = imp.load_source("custom_params", param_file)
+        if isinstance(custom_params.params, dict):
+            params = custom_params.params
+        else:
+            params = custom_params.params(param_args)
+
+        self.params = list(iter_params(params))
+        if shuffle:
+            random.shuffle(self.params)
+
+        self.num_per_group = num_per_group if num_per_group > 0 else len(self.params) 
+        self.exec_file = custom_params.main
+
+    def get_num_jobs(self):
+        return len(self.params)
+
+    def get_num_groups(self):
+        return (len(self.params) - 1) // self.num_per_group + 1
+
+    def get_group(self, idx):
+        if idx is None:
+            return [ param_to_arg(param) for param in self.params ]
+        else:
+            offset = idx * self.num_per_group
+            return [ param_to_arg(self.params[i]) for i in range(offset, min(offset + self.num_per_group, len(self.params))) ] 
+
+    def get_exec(self, arg):
+        return f"python -u {self.exec_file} {arg}"
+            
+
 # Load parameter files and generate args.
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -81,17 +114,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    custom_params = imp.load_source("custom_params", args.param_file)
-    params = custom_params.params(args.param_args)
+    handler = ParamHandler(args.param_file, args.num_per_group, param_args=args.param_args)
 
-    params = list(iter_params(params))
-
-    if args.idx is None:
-        for param in params:
-            arg = param_to_arg(param)
-            print(arg)
-    else:
-        offset = args.idx * args.num_per_group
-        for i in range(offset, min(offset + args.num_per_group, len(params))): 
-            print(param_to_arg(params[i]))
-
+    for arg in handler.get_group(args.idx):
+        print(arg)
