@@ -1,7 +1,9 @@
 from tensorboard.backend.event_processing import event_accumulator
 import re
+import time
 import os
 import sys
+import torch
 import glob
 import pandas as pd
 import yaml
@@ -10,16 +12,53 @@ import tqdm
 import pickle
 import argparse
 
+def to_cpu(x):
+    if isinstance(x, dict):
+        return { k : to_cpu(v) for k, v in x.items() }
+    elif isinstance(x, list):
+        return [ to_cpu(v) for v in x ]
+    elif isinstance(x, torch.Tensor):
+        return x.cpu()
+    else:
+        return x
+
+def mem2str(num_bytes):
+    assert num_bytes >= 0
+    if num_bytes >= 2 ** 30:  # GB
+        val = float(num_bytes) / (2 ** 30)
+        result = "%.3f GB" % val
+    elif num_bytes >= 2 ** 20:  # MB
+        val = float(num_bytes) / (2 ** 20)
+        result = "%.3f MB" % val
+    elif num_bytes >= 2 ** 10:  # KB
+        val = float(num_bytes) / (2 ** 10)
+        result = "%.3f KB" % val
+    else:
+        result = "%d bytes" % num_bytes
+    return result
+
+def get_mem_usage():
+    import psutil
+
+    mem = psutil.virtual_memory()
+    result = ""
+    result += "available: %s\t" % (mem2str(mem.available))
+    result += "used: %s\t" % (mem2str(mem.used))
+    result += "free: %s\t" % (mem2str(mem.free))
+    # result += "active: %s\t" % (mem2str(mem.active))
+    # result += "inactive: %s\t" % (mem2str(mem.inactive))
+    # result += "buffers: %s\t" % (mem2str(mem.buffers))
+    # result += "cached: %s\t" % (mem2str(mem.cached))
+    # result += "shared: %s\t" % (mem2str(mem.shared))
+    # result += "slab: %s\t" % (mem2str(mem.slab))
+    return result
+
 class LogProcessor:
     def __init__(self):
         pass
 
-    def load_one(self, subfolder):
-        config = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
-        config = dict([ ("override_" + entry).split('=') for entry in config ])
-
-        stats = dict()
-        # print(config)
+    def _load_tensorboard(self, subfolder):
+        entry = None
         for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")):
             ea = event_accumulator.EventAccumulator(event_file)
             ea.Reload()
@@ -28,15 +67,56 @@ class LogProcessor:
             for key_name in ea.Tags()["scalars"]:
                 entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
 
-            entry.update(config)
+        return entry
 
-        return entry, stats
+    def _load_checkpoint(self, subfolder):
+        # [TODO] Hardcoded path. 
+        sys.path.append("/private/home/yuandong/forked/luckmatters/catalyst")
+        checkpoint = None
+        for i in range(10):
+            try:
+                checkpoint = torch.load(os.path.join(subfolder, "checkpoint.pth.tar"))
+                break
+            except Exception as e:
+                time.sleep(2)
+
+        if checkpoint is None:
+            # print(subfolder)
+            # print(e)
+            return None
+
+        # Turn list of dict to dict of list. 
+        entry = dict()
+        for i, stat in enumerate(checkpoint.stats):
+            for k, v in stat.items():
+                if k in entry:
+                    entry[k].append(v)
+                else:
+                    # Alignment. 
+                    entry[k] = [None] * i + [v]
+
+            for k, v in entry.items():
+                if len(v) < i + 1:
+                    v.append(None)
+
+        return to_cpu(entry)
+
+    def load_one(self, subfolder):
+        config = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+        config = dict([ ("override_" + entry).split('=') for entry in config ])
+        # print(config)
+
+        entry = self._load_tensorboard(subfolder)
+        if entry is None:
+            entry = self._load_checkpoint(subfolder)
+        return entry
 
 def main():
     checkpoint_path = f"/checkpoint/{os.environ['USER']}" 
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
+    parser.add_argument("--num_process", type=int, default=32)
     parser.add_argument("--output_dir", type=str, default=os.path.join(checkpoint_path, "summary"))
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
 
@@ -72,12 +152,24 @@ def main():
         subfolders = list(glob.glob(os.path.join(curr_path, "*")))
         # load_one(subfolders[0])
 
-        pool = mp.Pool(32)
         res = []
-        stats = []
-        for entry, stat in tqdm.tqdm(pool.imap_unordered(log_processor.load_one, subfolders), total=len(subfolders)):
-            res.append(entry)
-            stats.append(stat)
+
+        if args.num_process == 1:
+            # Do not use multi-processing.
+            for subfolder in tqdm.tqdm(subfolders, total=len(subfolders)):
+                entry = log_processor.load_one(subfolder) 
+                if entry is not None:
+                    res.append(entry)
+        else:
+            pool = mp.Pool(args.num_process)
+            try:
+                for entry in tqdm.tqdm(pool.imap_unordered(log_processor.load_one, subfolders), total=len(subfolders)):
+                    if entry is not None:
+                        res.append(entry)
+
+            except Exception as e:
+                print(e)
+                print(get_mem_usage())
 
         df = pd.DataFrame(res)
 
