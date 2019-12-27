@@ -72,22 +72,29 @@ class LogProcessor:
     def _load_checkpoint(self, subfolder):
         # [TODO] Hardcoded path. 
         sys.path.append("/private/home/yuandong/forked/luckmatters/catalyst")
-        checkpoint = None
+        summary_file = os.path.join(subfolder, "summary.pth")
+        checkpoint_file = os.path.join(subfolder, "checkpoint.pth.tar")
+
+        stats = None
         for i in range(10):
             try:
-                checkpoint = torch.load(os.path.join(subfolder, "checkpoint.pth.tar"))
+                if os.path.exists(summary_file):
+                    stats = torch.load(summary_file)
+                elif os.path.exists(checkpoint_file):
+                    checkpoint = torch.load(checkpoint_file)
+                    stats = checkpoint.stats
                 break
             except Exception as e:
                 time.sleep(2)
 
-        if checkpoint is None:
+        if stats is None:
             # print(subfolder)
             # print(e)
             return None
 
         # Turn list of dict to dict of list. 
         entry = dict()
-        for i, stat in enumerate(checkpoint.stats):
+        for i, stat in enumerate(stats):
             for k, v in stat.items():
                 if k in entry:
                     entry[k].append(v)
@@ -109,6 +116,9 @@ class LogProcessor:
         entry = self._load_tensorboard(subfolder)
         if entry is None:
             entry = self._load_checkpoint(subfolder)
+
+        if entry is not None:
+            entry.update(config)
         return entry
 
 def main():
@@ -163,7 +173,11 @@ def main():
         else:
             pool = mp.Pool(args.num_process)
             try:
-                for entry in tqdm.tqdm(pool.imap_unordered(log_processor.load_one, subfolders), total=len(subfolders)):
+                num_folders = len(subfolders)
+                chunksize = (num_folders + args.num_process - 1) // args.num_process
+                print(f"Chunksize: {chunksize}")
+                results = pool.imap_unordered(log_processor.load_one, subfolders, chunksize=chunksize)
+                for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
                         res.append(entry)
 

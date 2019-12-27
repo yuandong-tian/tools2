@@ -27,11 +27,13 @@ def main():
         if col not in key_stats:
             continue
         len_series = df[col].apply(lambda x: len(x))
+        data = list(chain.from_iterable(df[col].values)) 
 
         entry = dict(
             key = col,
-            min = min(chain.from_iterable(df[col].values)),
-            max = max(chain.from_iterable(df[col].values)),
+            min = min(data),
+            max = max(data),
+            mean = sum(data) / len(data),
             min_len = min(len_series),
             max_len = max(len_series),
             mean_len = sum(len_series) / len(len_series)

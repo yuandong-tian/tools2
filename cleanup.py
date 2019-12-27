@@ -8,19 +8,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--subfolders", type=str, help="subfolders to check, separated by comma")
     parser.add_argument("--patterns", type=str)
-    parser.add_argument("--switches", type=str)
+    parser.add_argument("--keep_recent", type=int, default=3, help="Keep most recent few models")
 
     args = parser.parse_args()
 
     checkpoint_path = f"/checkpoint/{os.environ['USER']}/outputs" 
 
     patterns = args.patterns.split(",")
-    switches = args.switches.split(",")
-
     print(patterns)
-    print(switches)
 
-    for pattern, switch in zip(patterns, switches):
+    for pattern in patterns:
         for subfolder in args.subfolders.split(","):
             print(f"Check {subfolder}")
             for root, dirnames, filenames in os.walk(os.path.join(checkpoint_path, subfolder)):
@@ -34,11 +31,14 @@ def main():
                 # sorted from newest to oldest.
                 filenames = sorted(filenames, key=lambda x: -x[0])
 
-                print(f"{root}: Files to keep: ")
-                print(filenames[:2])
+                if args.keep_recent > 0:
+                    print(f"{root}: Files to keep: ")
+                    print(filenames[:args.keep_recent])
+                else:
+                    print(f"{root}: Delete all")
 
                 # only keep the last three and delete the rest.
-                for _, f in filenames[3:]:
+                for _, f in filenames[args.keep_recent:]:
                     os.remove(f)
         
 
