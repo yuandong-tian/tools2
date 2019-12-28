@@ -146,6 +146,7 @@ def main():
     else:
         logdirs = utils.parse_logdirs(args.logdirs)
 
+    s = ""
     for root in logdirs:
         print(f"Processing {root}")
         df_name = root.replace("/", "_")
@@ -154,7 +155,7 @@ def main():
 
         # find all folders starts with . (but not . and ..)
         meta = {
-            "hidden": list(glob.glob(os.path.join(curr_path, ".??*")))
+            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ]
         }
 
         subfolders = list(glob.glob(os.path.join(curr_path, "*")))
@@ -187,8 +188,11 @@ def main():
 
         filename = os.path.join(args.output_dir, df_name + ".pkl")
         pickle.dump(dict(df=df, meta=meta), open(filename, "wb"))
-        print(f"Save to {filename}")
 
+        s += f"# {meta['hidden']}\n" 
+        s += f"filename = \"{filename}\"\n"
+
+    print(s)
 
 if __name__ == "__main__":
     main()
