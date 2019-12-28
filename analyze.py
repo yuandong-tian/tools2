@@ -11,6 +11,7 @@ import multiprocessing as mp
 import tqdm
 import pickle
 import argparse
+import utils
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -122,12 +123,10 @@ class LogProcessor:
         return entry
 
 def main():
-    checkpoint_path = f"/checkpoint/{os.environ['USER']}" 
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
     parser.add_argument("--num_process", type=int, default=32)
-    parser.add_argument("--output_dir", type=str, default=os.path.join(checkpoint_path, "summary"))
+    parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
 
     args = parser.parse_args()
@@ -145,14 +144,13 @@ def main():
             basename = os.path.splitext(basename)[0]
             logdirs.append(basename.replace("_", "/"))
     else:
-        logdirs = args.logdirs.split(",")
-
+        logdirs = utils.parse_logdirs(args.logdirs)
 
     for root in logdirs:
         print(f"Processing {root}")
         df_name = root.replace("/", "_")
 
-        curr_path = os.path.join(checkpoint_path, "outputs", root) 
+        curr_path = os.path.join(utils.get_checkpoint_output_path(), root) 
 
         # find all folders starts with . (but not . and ..)
         meta = {
