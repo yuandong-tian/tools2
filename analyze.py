@@ -190,7 +190,7 @@ def main():
         pickle.dump(dict(df=df, meta=meta), open(filename, "wb"))
 
         s += f"# {meta['hidden']}\n" 
-        s += f"filename = \"{filename}\"\n"
+        s += f"watch.append(\"{filename}\")\n"
 
     print(s)
 
