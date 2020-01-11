@@ -43,6 +43,12 @@ def main():
                 mean_len = sum(len_series) / len(len_series)
             )
 
+            data = [ (vv, df["folder"][row_idx], sample_idx) for row_idx, v in enumerate(df[col].values) for sample_idx, vv in enumerate(v) ] 
+            data = sorted(data, key = lambda x: x[0])
+            print(f"Top 10 of {col}")
+            for i in range(10):
+                print(f"{data[-i-1]}")
+
             res.append(entry)
 
         df_stats = pd.DataFrame(res)

@@ -94,7 +94,7 @@ class LogProcessor:
             return None
 
         # Turn list of dict to dict of list. 
-        entry = dict()
+        entry = dict(folder=subfolder)
         for i, stat in enumerate(stats):
             for k, v in stat.items():
                 if k in entry:
@@ -188,6 +188,9 @@ def main():
 
         filename = os.path.join(args.output_dir, df_name + ".pkl")
         pickle.dump(dict(df=df, meta=meta), open(filename, "wb"))
+
+        print(f"Size: {os.path.getsize(filename) / 2 ** 20} MB")
+        print(f"Columns: {df.columns}")
 
         s += f"# {meta['hidden']}\n" 
         s += f"watch.append(\"{filename}\")\n"
