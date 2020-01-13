@@ -10,6 +10,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
     parser.add_argument("--key_stats", type=str, default=None)
+    parser.add_argument("--first_k_iter", type=int, default=None)
+    parser.add_argument("--contain_config_str", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -31,20 +33,31 @@ def main():
             if col not in key_stats:
                 continue
             len_series = df[col].apply(lambda x: len(x))
-            data = list(chain.from_iterable(df[col].values)) 
+
+            data = []
+            for row_idx, v in enumerate(df[col].values):
+                for sample_idx, vv in enumerate(v): 
+                    if args.first_k_iter is not None and sample_idx > args.first_k_iter:
+                        continue
+
+                    if args.contain_config_str is not None and df["_config_str"][row_idx].find(args.contain_config_str) < 0:
+                        continue
+
+                    data.append((vv, df["folder"][row_idx], df["_config_str"][row_idx], sample_idx))
+
+            data = sorted(data, key = lambda x: x[0])
+            mean = sum([ v[0] for v in data ]) / len(data)
 
             entry = dict(
                 key = col,
-                min = min(data),
-                max = max(data),
-                mean = sum(data) / len(data),
+                min = data[0][0],
+                max = data[-1][0],
+                mean = mean,
                 min_len = min(len_series),
                 max_len = max(len_series),
                 mean_len = sum(len_series) / len(len_series)
             )
 
-            data = [ (vv, df["folder"][row_idx], sample_idx) for row_idx, v in enumerate(df[col].values) for sample_idx, vv in enumerate(v) ] 
-            data = sorted(data, key = lambda x: x[0])
             print(f"Top 10 of {col}")
             for i in range(10):
                 print(f"{data[-i-1]}")

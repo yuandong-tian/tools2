@@ -111,7 +111,9 @@ class LogProcessor:
 
     def load_one(self, subfolder):
         config = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+        config_str = ",".join(config)
         config = dict([ ("override_" + entry).split('=') for entry in config ])
+        config["_config_str"] = config_str
         # print(config)
 
         entry = self._load_tensorboard(subfolder)
