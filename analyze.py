@@ -70,20 +70,18 @@ class LogProcessor:
 
         return entry
 
-    def _load_checkpoint(self, subfolder):
+    def _load_checkpoint(self, subfolder, args):
         # [TODO] Hardcoded path. 
         sys.path.append("/private/home/yuandong/forked/luckmatters/catalyst")
-        summary_file = os.path.join(subfolder, "summary.pth")
-        checkpoint_file = os.path.join(subfolder, "checkpoint.pth.tar")
+        summary_file = os.path.join(subfolder, args.summary_file)
 
         stats = None
         for i in range(10):
             try:
                 if os.path.exists(summary_file):
                     stats = torch.load(summary_file)
-                elif os.path.exists(checkpoint_file):
-                    checkpoint = torch.load(checkpoint_file)
-                    stats = checkpoint.stats
+                    if hasattr(stats, "stats"):
+                        stats = stats.stats
                 break
             except Exception as e:
                 time.sleep(2)
@@ -104,21 +102,34 @@ class LogProcessor:
                     entry[k] = [None] * i + [v]
 
             for k, v in entry.items():
-                if len(v) < i + 1:
-                    v.append(None)
+                if isinstance(v, list):
+                    if len(v) < i + 1:
+                        v.append(None)
 
         return to_cpu(entry)
 
-    def load_one(self, subfolder):
-        config = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
-        config_str = ",".join(config)
-        config = dict([ ("override_" + entry).split('=') for entry in config ])
+    def load_one(self, params):
+        subfolder = params["subfolder"]
+        args = params["args"]
+        
+        overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+
+        config_str = ",".join(overrides)
+        config = dict([ ("override_" + entry).split('=') for entry in overrides ])
         config["_config_str"] = config_str
         # print(config)
 
+        if params["first"] and "override_sweep_filename" in config: 
+            first_group = dict()
+            for line in open(config["override_sweep_filename"], "r"):
+                first_group["command"] = line.strip()
+                break
+
+            config["_first"] = first_group
+
         entry = self._load_tensorboard(subfolder)
         if entry is None:
-            entry = self._load_checkpoint(subfolder)
+            entry = self._load_checkpoint(subfolder, args)
 
         if entry is not None:
             entry.update(config)
@@ -130,6 +141,7 @@ def main():
     parser.add_argument("--num_process", type=int, default=32)
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
+    parser.add_argument("--summary_file", default="summary.pth", choices=["summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
 
@@ -155,11 +167,6 @@ def main():
 
         curr_path = os.path.join(utils.get_checkpoint_output_path(), root) 
 
-        # find all folders starts with . (but not . and ..)
-        meta = {
-            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ]
-        }
-
         subfolders = list(glob.glob(os.path.join(curr_path, "*")))
         # load_one(subfolders[0])
 
@@ -167,8 +174,8 @@ def main():
 
         if args.num_process == 1:
             # Do not use multi-processing.
-            for subfolder in tqdm.tqdm(subfolders, total=len(subfolders)):
-                entry = log_processor.load_one(subfolder) 
+            for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
+                entry = log_processor.load_one(dict(subfolder=subfolder, args=args, first= (i == 0))) 
                 if entry is not None:
                     res.append(entry)
         else:
@@ -177,7 +184,8 @@ def main():
                 num_folders = len(subfolders)
                 chunksize = (num_folders + args.num_process - 1) // args.num_process
                 print(f"Chunksize: {chunksize}")
-                results = pool.imap_unordered(log_processor.load_one, subfolders, chunksize=chunksize)
+                arguments = [ dict(subfolder=subfolder, args=args, first= (i == 0)) for i, subfolder in enumerate(subfolders) ]
+                results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
                         res.append(entry)
@@ -185,6 +193,16 @@ def main():
             except Exception as e:
                 print(e)
                 print(get_mem_usage())
+
+        # find all folders starts with . (but not . and ..)
+        meta = {
+            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ]
+        }
+
+        # Take the first information out. 
+        if "_first" in res[0]:
+            meta.update(res[0]["_first"])
+            del res[0]["_first"]
 
         df = pd.DataFrame(res)
 
@@ -194,7 +212,7 @@ def main():
         print(f"Size: {os.path.getsize(filename) / 2 ** 20} MB")
         print(f"Columns: {df.columns}")
 
-        s += f"# {meta['hidden']}\n" 
+        s += f"# {meta}\n" 
         s += f"watch.append(\"{filename}\")\n"
 
     print(s)

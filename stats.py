@@ -5,6 +5,10 @@ import sys
 from itertools import chain
 import utils
 import pandas as pd
+import json
+
+def config2dict(s):
+    return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
 
 def main():
     parser = argparse.ArgumentParser()
@@ -22,26 +26,44 @@ def main():
     else:
         key_stats = args.key_stats.split(",")
 
+    if args.contain_config_str is not None: 
+        config_strs = config2dict(args.contain_config_str)
+    else:
+        config_strs = None
 
     for logdir in logdirs:
         print(f"Processing {logdir}")
-        filename = os.path.join(utils.get_checkpoint_summary_path(), logdir.replace("/", "_") + ".pkl")
+        summary_dir = utils.get_checkpoint_summary_path()
+        prefix = os.path.join(summary_dir, logdir.replace("/", "_"))
+
+        filename = prefix + ".pkl"
         df = pickle.load(open(filename, "rb"))["df"]
 
         res = []
         for col in df.columns:
             if col not in key_stats:
                 continue
-            len_series = df[col].apply(lambda x: len(x))
+            len_series = df[col].apply(lambda x: len(x) if isinstance(x, list) else 1)
 
             data = []
             for row_idx, v in enumerate(df[col].values):
+                if isinstance(v, float):
+                    v = [v]
+
                 for sample_idx, vv in enumerate(v): 
                     if args.first_k_iter is not None and sample_idx > args.first_k_iter:
                         continue
 
-                    if args.contain_config_str is not None and df["_config_str"][row_idx].find(args.contain_config_str) < 0:
-                        continue
+                    if config_strs is not None:
+                        skip = False
+                        config_strs_row = config2dict(df["_config_str"][row_idx])
+
+                        for k, v in config_strs.items():
+                            if config_strs_row.get(k, None) != v:
+                                skip = True
+                                break
+                        if skip:
+                            continue
 
                     data.append((vv, df["folder"][row_idx], df["_config_str"][row_idx], sample_idx))
 
@@ -61,6 +83,11 @@ def main():
             print(f"Top 10 of {col}")
             for i in range(10):
                 print(f"{data[-i-1]}")
+
+            json_filename = prefix + "_top.json" 
+            json.dump(data[-10:], open(json_filename, "w")) 
+
+            print(f"Save json to {json_filename}")
 
             res.append(entry)
 
