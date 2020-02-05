@@ -54,6 +54,24 @@ def get_mem_usage():
     # result += "slab: %s\t" % (mem2str(mem.slab))
     return result
 
+
+# Turn list of dict to dict of list. 
+def listDict2DictList(stats):
+    entry = dict()
+    for i, stat in enumerate(stats):
+        for k, v in stat.items():
+            if k in entry:
+                entry[k].append(v)
+            else:
+                # Alignment. 
+                entry[k] = [None] * i + [v]
+
+        for k, v in entry.items():
+            if isinstance(v, list):
+                if len(v) < i + 1:
+                    v.append(None)
+    return entry
+
 class LogProcessor:
     def __init__(self):
         pass
@@ -68,7 +86,7 @@ class LogProcessor:
             for key_name in ea.Tags()["scalars"]:
                 entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
 
-        return entry
+        return [entry] if entry is not None else None
 
     def _load_checkpoint(self, subfolder, args):
         # [TODO] Hardcoded path. 
@@ -91,22 +109,20 @@ class LogProcessor:
             # print(e)
             return None
 
-        # Turn list of dict to dict of list. 
-        entry = dict(folder=subfolder)
-        for i, stat in enumerate(stats):
-            for k, v in stat.items():
-                if k in entry:
-                    entry[k].append(v)
-                else:
-                    # Alignment. 
-                    entry[k] = [None] * i + [v]
+        if not isinstance(stats, dict):
+            stats = [stats]
+        else:
+            stats = stats.values()
 
-            for k, v in entry.items():
-                if isinstance(v, list):
-                    if len(v) < i + 1:
-                        v.append(None)
+        entries = []
+        for one_stat in stats:
+            if one_stat is not None:
+                entry = dict(folder=subfolder)
+                entry.update(listDict2DictList(one_stat))
+                entries.append(to_cpu(entry))
 
-        return to_cpu(entry)
+        return entries
+            
 
     def load_one(self, params):
         subfolder = params["subfolder"]
@@ -119,21 +135,25 @@ class LogProcessor:
         config["_config_str"] = config_str
         # print(config)
 
+        first_group = None
         if params["first"] and "override_sweep_filename" in config: 
             first_group = dict()
             for line in open(config["override_sweep_filename"], "r"):
                 first_group["command"] = line.strip()
                 break
 
-            config["_first"] = first_group
+        entries = self._load_tensorboard(subfolder)
+        if entries is None:
+            entries = self._load_checkpoint(subfolder, args)
 
-        entry = self._load_tensorboard(subfolder)
-        if entry is None:
-            entry = self._load_checkpoint(subfolder, args)
+        if entries is not None:
+            for entry in entries:
+                entry.update(config)
 
-        if entry is not None:
-            entry.update(config)
-        return entry
+            if first_group is not None:
+                entries[0]["_first"] = first_group
+
+        return entries
 
 def main():
     parser = argparse.ArgumentParser()
@@ -141,7 +161,7 @@ def main():
     parser.add_argument("--num_process", type=int, default=32)
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
-    parser.add_argument("--summary_file", default="summary.pth", choices=["summary.pth", "checkpoint.pth.tar"])
+    parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
 
@@ -177,7 +197,7 @@ def main():
             for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
                 entry = log_processor.load_one(dict(subfolder=subfolder, args=args, first= (i == 0))) 
                 if entry is not None:
-                    res.append(entry)
+                    res += entry
         else:
             pool = mp.Pool(args.num_process)
             try:
@@ -188,7 +208,7 @@ def main():
                 results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
-                        res.append(entry)
+                        res += entry
 
             except Exception as e:
                 print(e)
