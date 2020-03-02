@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 from itertools import chain
+import math
 import utils
 import pandas as pd
 import json
@@ -52,6 +53,9 @@ def main():
 
                 for sample_idx, vv in enumerate(v): 
                     if args.first_k_iter is not None and sample_idx > args.first_k_iter:
+                        continue
+
+                    if math.isnan(vv):
                         continue
 
                     if config_strs is not None:
