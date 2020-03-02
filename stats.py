@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--key_stats", type=str, default=None)
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--contain_config_str", type=str, default=None)
+    parser.add_argument("--topk_mean", type=int, default=5)
 
     args = parser.parse_args()
 
@@ -51,6 +52,7 @@ def main():
                 if isinstance(v, float):
                     v = [v]
 
+                this_data = []
                 for sample_idx, vv in enumerate(v): 
                     if args.first_k_iter is not None and sample_idx > args.first_k_iter:
                         continue
@@ -69,7 +71,19 @@ def main():
                         if skip:
                             continue
 
-                    data.append((vv, df["folder"][row_idx], df["_config_str"][row_idx], sample_idx))
+                    this_data.append((vv, sample_idx))
+
+                # Compute top-5 average within a row. 
+                this_data = sorted(this_data, key = lambda x: -x[0])
+                best = this_data[0][1]
+                this_data = [ vv for vv, idx in this_data]
+
+                if len(this_data) < args.topk_mean:
+                    avg = sum(this_data) / len(this_data)
+                else:
+                    avg = sum(this_data[:args.topk_mean]) / args.topk_mean
+
+                data.append((avg, df["folder"][row_idx], df["_config_str"][row_idx], best))
 
             data = sorted(data, key = lambda x: x[0])
             mean = sum([ v[0] for v in data ]) / len(data)
@@ -84,7 +98,7 @@ def main():
                 mean_len = sum(len_series) / len(len_series)
             )
 
-            print(f"Top 10 of {col}")
+            print(f"Top 10 of {col} (each row takes average of top-{args.topk_mean} entries):")
             for i in range(10):
                 print(f"{data[-i-1]}")
 
