@@ -78,15 +78,22 @@ class LogProcessor:
 
     def _load_tensorboard(self, subfolder):
         entry = None
-        for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")):
-            ea = event_accumulator.EventAccumulator(event_file)
-            ea.Reload()
-            entry = dict(folder=subfolder)
-            
-            for key_name in ea.Tags()["scalars"]:
-                entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
+        # Use the largest event_file. 
+        files = [ (os.path.getsize(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+        if len(files) == 0: 
+            return None
 
-        return [entry] if entry is not None else None
+        files = sorted(files, key=lambda x: -x[0])
+
+        event_file = files[0][1]
+        ea = event_accumulator.EventAccumulator(event_file)
+        ea.Reload()
+        entry = dict(folder=subfolder)
+        
+        for key_name in ea.Tags()["scalars"]:
+            entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
+
+        return [entry]
 
     def _load_checkpoint(self, subfolder, args):
         # [TODO] Hardcoded path. 

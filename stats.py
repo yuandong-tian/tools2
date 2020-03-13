@@ -74,6 +74,9 @@ def main():
                     this_data.append((vv, sample_idx))
 
                 # Compute top-5 average within a row. 
+                if len(this_data) == 0:
+                    continue
+
                 this_data = sorted(this_data, key = lambda x: -x[0])
                 best = this_data[0][1]
                 this_data = [ vv for vv, idx in this_data]
