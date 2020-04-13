@@ -15,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
     parser.add_argument("--key_stats", type=str, default=None)
+    parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--contain_config_str", type=str, default=None)
     parser.add_argument("--topk_mean", type=int, default=5)
@@ -32,6 +33,8 @@ def main():
         config_strs = config2dict(args.contain_config_str)
     else:
         config_strs = None
+    
+    order_func = lambda x: -x[0] if args.descending else x[0]
 
     for logdir in logdirs:
         print(f"Processing {logdir}")
@@ -77,7 +80,7 @@ def main():
                 if len(this_data) == 0:
                     continue
 
-                this_data = sorted(this_data, key = lambda x: -x[0])
+                this_data = sorted(this_data, key=order_func)
                 best = this_data[0][1]
                 this_data = [ vv for vv, idx in this_data]
 
@@ -86,15 +89,15 @@ def main():
                 else:
                     avg = sum(this_data[:args.topk_mean]) / args.topk_mean
 
-                data.append((avg, df["folder"][row_idx], df["_config_str"][row_idx], best))
+                data.append((avg, df["folder"][row_idx], df["_config_str"][row_idx], best, len(this_data)))
 
-            data = sorted(data, key = lambda x: x[0])
+            data = sorted(data, key=order_func)
             mean = sum([ v[0] for v in data ]) / len(data)
 
             entry = dict(
                 key = col,
-                min = data[0][0],
-                max = data[-1][0],
+                min = data[-1][0],
+                max = data[0][0],
                 mean = mean,
                 min_len = min(len_series),
                 max_len = max(len_series),
@@ -103,10 +106,10 @@ def main():
 
             print(f"Top 10 of {col} (each row takes average of top-{args.topk_mean} entries):")
             for i in range(10):
-                print(f"{data[-i-1]}")
+                print(f"{data[i]}")
 
             json_filename = prefix + "_top.json" 
-            json.dump(data[-10:], open(json_filename, "w")) 
+            json.dump(data[:10], open(json_filename, "w")) 
 
             print(f"Save json to {json_filename}")
 
