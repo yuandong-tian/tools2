@@ -13,6 +13,8 @@ import pickle
 import argparse
 import utils
 
+log_matcher = re.compile(r" - \[(\d+)\]: train loss: ([\d\.]+), test loss: ([\d\.]+)") 
+
 def to_cpu(x):
     if isinstance(x, dict):
         return { k : to_cpu(v) for k, v in x.items() }
@@ -93,6 +95,8 @@ class LogProcessor:
         for key_name in ea.Tags()["scalars"]:
             entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
 
+        # Format: 
+        # List[Dict[str, List[value]]]: number of trials * (key, a list of values)
         return [entry]
 
     def _load_checkpoint(self, subfolder, args):
@@ -130,6 +134,23 @@ class LogProcessor:
 
         return entries
 
+    def _load_log(self, subfolder, args):
+        all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
+        if len(all_log_files) == 0:
+            return None
+
+        log_file = all_log_files[0]
+        train_loss = []
+        test_loss = []
+        with open(log_file, "r") as f:
+            for line in f:
+                m = log_matcher.search(line)
+                if m:
+                    train_loss.append(float(m.group(2)))
+                    test_loss.append(float(m.group(3)))
+
+        return [ dict(train_loss=train_loss, test_loss=test_loss, folder=subfolder) ] 
+
 
     def load_one(self, params):
         subfolder = params["subfolder"]
@@ -149,9 +170,15 @@ class LogProcessor:
                 first_group["command"] = line.strip()
                 break
 
-        entries = self._load_tensorboard(subfolder)
-        if entries is None:
-            entries = self._load_checkpoint(subfolder, args)
+        if args.loader is None:
+            # Try them one by one. 
+            entries = self._load_tensorboard(subfolder)
+            if entries is None:
+                entries = self._load_checkpoint(subfolder, args)
+            if entries is None:
+                entries = self._load_log(subfolder, args)
+        else:
+            entries = eval(f"self._load_{args.loader}(subfolder, args)")
 
         if entries is not None:
             for entry in entries:
@@ -170,6 +197,7 @@ def main():
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
     parser.add_argument("--path_outside_checkpoint", action="store_true")
+    parser.add_argument("--loader", default=None, choices=["tensorboard", "log", "checkpoint"])
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
