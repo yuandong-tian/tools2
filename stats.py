@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--key_stats", type=str, default=None)
     parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
-    parser.add_argument("--contain_config_str", type=str, default=None)
+    parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--topk_mean", type=int, default=5)
 
     args = parser.parse_args()
@@ -29,8 +29,8 @@ def main():
     else:
         key_stats = args.key_stats.split(",")
 
-    if args.contain_config_str is not None: 
-        config_strs = config2dict(args.contain_config_str)
+    if args.config is not None: 
+        config_strs = config2dict(args.config)
     else:
         config_strs = None
     

@@ -1,4 +1,5 @@
 from tensorboard.backend.event_processing import event_accumulator
+from collections import defaultdict
 import re
 import time
 import os
@@ -14,6 +15,7 @@ import argparse
 import utils
 
 log_matcher = re.compile(r" - \[(\d+)\]: train loss: ([\d\.]+), test loss: ([\d\.]+)") 
+log_matcher2 = re.compile(r" - \[(\d+)\]: (train|test)\s+trend\[margin: ([\d\.]+)\]: ([\d\.]+)") 
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -140,17 +142,24 @@ class LogProcessor:
             return None
 
         log_file = all_log_files[0]
-        train_loss = []
-        test_loss = []
+        entry = defaultdict(list)
+        entry["folder"] = subfolder
+
         with open(log_file, "r") as f:
             for line in f:
                 m = log_matcher.search(line)
                 if m:
-                    train_loss.append(float(m.group(2)))
-                    test_loss.append(float(m.group(3)))
+                    entry["train_loss"].append(float(m.group(2)))
+                    entry["test_loss"].append(float(m.group(3)))
+                else:
+                    m = log_matcher2.search(line)
+                    if m:
+                        category = m.group(2)
+                        margin = float(m.group(3))
+                        acc = float(m.group(4))
+                        entry[category + "_trend_margin" + str(margin)].append(acc)
 
-        return [ dict(train_loss=train_loss, test_loss=test_loss, folder=subfolder) ] 
-
+        return [ dict(entry) ]
 
     def load_one(self, params):
         subfolder = params["subfolder"]
