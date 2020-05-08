@@ -5,6 +5,7 @@ import time
 import os
 import sys
 import torch
+import json
 import glob
 import pandas as pd
 import yaml
@@ -15,7 +16,7 @@ import argparse
 import utils
 
 log_matcher = re.compile(r" - \[(\d+)\]: train loss: ([\d\.]+), test loss: ([\d\.]+)") 
-log_matcher2 = re.compile(r" - \[(\d+)\]: (train|test)\s+trend\[margin: ([\d\.]+)\]: ([\d\.]+)") 
+json_matcher = re.compile(r"json_stats: (.*?)$")
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -145,21 +146,46 @@ class LogProcessor:
         entry = defaultdict(list)
         entry["folder"] = subfolder
 
+        cnt = 0
         with open(log_file, "r") as f:
             for line in f:
                 m = log_matcher.search(line)
                 if m:
                     entry["train_loss"].append(float(m.group(2)))
                     entry["test_loss"].append(float(m.group(3)))
-                else:
-                    m = log_matcher2.search(line)
-                    if m:
-                        category = m.group(2)
-                        margin = float(m.group(3))
-                        acc = float(m.group(4))
-                        entry[category + "_trend_margin" + str(margin)].append(acc)
+                    cnt += 1
 
-        return [ dict(entry) ]
+        if cnt > 0:
+            return [ dict(entry) ]
+        else:
+            return None
+
+    def _load_json(self, subfolder, args):
+        all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
+        if len(all_log_files) == 0:
+            return None
+
+        log_file = all_log_files[0]
+        entry = defaultdict(list)
+        entry["folder"] = subfolder
+
+        cnt = 0
+        with open(log_file, "r") as f:
+            for line in f:
+                m = json_matcher.search(line)
+                if not m:
+                    continue
+                this_entry = json.loads(m.group(1))
+
+                for k, v in this_entry.items():
+                    entry[k].append(v)
+
+                cnt += 1
+
+        if cnt > 0:
+            return [ dict(entry) ]
+        else:
+            return None
 
     def load_one(self, params):
         subfolder = params["subfolder"]
@@ -182,6 +208,8 @@ class LogProcessor:
         if args.loader is None:
             # Try them one by one. 
             entries = self._load_tensorboard(subfolder)
+            if entries is None:
+                entries = self._load_json(subfolder, args)
             if entries is None:
                 entries = self._load_checkpoint(subfolder, args)
             if entries is None:
@@ -206,7 +234,7 @@ def main():
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
     parser.add_argument("--path_outside_checkpoint", action="store_true")
-    parser.add_argument("--loader", default=None, choices=["tensorboard", "log", "checkpoint"])
+    parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
@@ -243,10 +271,8 @@ def main():
         else:
             subfolders = list(glob.glob(os.path.join(curr_path, "*")))
 
-        # load_one(subfolders[0])
-
+        # test = log_processor.load_one(dict(subfolder=subfolders[0], args=args, first=True))
         res = []
-
         if args.num_process == 1:
             # Do not use multi-processing.
             for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
