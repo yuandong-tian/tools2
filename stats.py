@@ -104,12 +104,14 @@ def main():
                 mean_len = sum(len_series) / len(len_series)
             )
 
-            print(f"Top 10 of {col} (each row takes average of top-{args.topk_mean} entries):")
-            for i in range(10):
+            n = min(10, len(data))
+
+            print(f"Top {n} of {col} (each row takes average of top-{args.topk_mean} entries):")
+            for i in range(n):
                 print(f"{data[i]}")
 
             json_filename = prefix + "_top.json" 
-            json.dump(data[:10], open(json_filename, "w")) 
+            json.dump(data[:n], open(json_filename, "w")) 
 
             print(f"Save json to {json_filename}")
 

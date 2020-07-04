@@ -81,22 +81,37 @@ class LogProcessor:
     def __init__(self):
         pass
 
-    def _load_tensorboard(self, subfolder):
-        entry = None
-        # Use the largest event_file.
-        files = [ (os.path.getsize(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+    def _load_tensorboard(self, subfolder, args):
+        if args.tb_choice == "largest":
+            # Use the largest event_file.
+            files = [ (os.path.getsize(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = sorted(files, key=lambda x: -x[0])[:1]
+        elif args.tb_choice == "earliest":
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = sorted(files, key=lambda x: x[0])[:1]
+        elif args.tb_choice == "latest":
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = sorted(files, key=lambda x: -x[0])[:1]
+        elif args.tb_choice == "all":
+            # All files, earliest first
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = sorted(files, key=lambda x: x[0])
+        else:
+            raise RuntimeError(f"Unknown tb_choice: {args.tb_choice}")
+
         if len(files) == 0:
             return None
 
-        files = sorted(files, key=lambda x: -x[0])
-
-        event_file = files[0][1]
-        ea = event_accumulator.EventAccumulator(event_file)
-        ea.Reload()
         entry = dict(folder=subfolder)
+        for _, event_file in files:
+            ea = event_accumulator.EventAccumulator(event_file)
+            ea.Reload()
 
-        for key_name in ea.Tags()["scalars"]:
-            entry[key_name] = [ s.value for s in ea.Scalars(key_name) ]
+            for key_name in ea.Tags()["scalars"]:
+                l = [ s.value for s in ea.Scalars(key_name) ]
+                if key_name not in entry: 
+                    entry[key_name] = []
+                entry[key_name] += l
 
         # Format: 
         # List[Dict[str, List[value]]]: number of trials * (key, a list of values)
@@ -207,7 +222,7 @@ class LogProcessor:
 
         if args.loader is None:
             # Try them one by one. 
-            entries = self._load_tensorboard(subfolder)
+            entries = self._load_tensorboard(subfolder, args)
             if entries is None:
                 entries = self._load_json(subfolder, args)
             if entries is None:
@@ -235,6 +250,7 @@ def main():
     parser.add_argument("--no_sub_folder", action="store_true")
     parser.add_argument("--path_outside_checkpoint", action="store_true")
     parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
+    parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
