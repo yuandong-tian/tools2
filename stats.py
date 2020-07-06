@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--topk_mean", type=int, default=5)
 
     args = parser.parse_args()
@@ -104,9 +105,9 @@ def main():
                 mean_len = sum(len_series) / len(len_series)
             )
 
-            n = min(10, len(data))
+            n = min(args.topk, len(data))
 
-            print(f"Top {n} of {col} (each row takes average of top-{args.topk_mean} entries):")
+            print(f"Top {n}/{len(data)} of {col} (each row takes average of top-{args.topk_mean} entries):")
             for i in range(n):
                 print(f"{data[i]}")
 
