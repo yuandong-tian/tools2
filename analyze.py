@@ -206,7 +206,11 @@ class LogProcessor:
         subfolder = params["subfolder"]
         args = params["args"]
 
-        overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+        if os.path.exists(os.path.join(subfolder, ".hydra")):
+            overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+        else:
+            multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
+            overrides = multirun_info["hydra"]["overrides"]["task"]
 
         config_str = ",".join(overrides)
         config = dict([ ("override_" + entry).split('=') for entry in overrides ])
@@ -285,7 +289,7 @@ def main():
         if args.no_sub_folder:
             subfolders = [ curr_path ]
         else:
-            subfolders = list(glob.glob(os.path.join(curr_path, "*")))
+            subfolders = [ subfolder for subfolder in glob.glob(os.path.join(curr_path, "*")) if not subfolder.startswith('.') and os.path.isdir(subfolder) ]
 
         # test = log_processor.load_one(dict(subfolder=subfolders[0], args=args, first=True))
         res = []

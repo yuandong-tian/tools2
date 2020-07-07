@@ -1,14 +1,14 @@
 import os
 import sys
+import yaml
 
-def get_checkpoint_path():
-    return f"/checkpoint/{os.environ['USER']}" 
+config = yaml.load(open("/home/yuandong/.tools2.yaml"), Loader=yaml.FullLoader)
 
 def get_checkpoint_output_path():
-    return f"/checkpoint/{os.environ['USER']}/outputs" 
+    return config["output_path"]
 
 def get_checkpoint_summary_path():
-    return f"/checkpoint/{os.environ['USER']}/summary" 
+    return config["summary_path"]
 
 def parse_logdirs(logdirs):
     checkpoint_output_path = get_checkpoint_output_path()
@@ -20,7 +20,7 @@ def parse_logdirs(logdirs):
     for d in logdirs:
         if d.startswith(checkpoint_output_path):
             d = d[len(checkpoint_output_path) + 1:]
-            res.append(d)
+        res.append(d)
 
     return res
 
