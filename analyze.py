@@ -208,9 +208,28 @@ class LogProcessor:
 
         if os.path.exists(os.path.join(subfolder, ".hydra")):
             overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
-        else:
+        elif os.path.exists(os.path.join(subfolder, "multirun.yaml")):
             multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
             overrides = multirun_info["hydra"]["overrides"]["task"]
+        else:
+            # Last resort.. read *.log file directly.
+            num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
+            assert len(num_files) > 0
+            log_file = num_files[0]
+            text = None
+            for line in open(log_file):
+                if text is None:
+                    if not line.startswith("[") and not line.startswith(" "):
+                        text = line
+                else:
+                    if line.startswith("["):
+                        break
+                    text += line
+
+            assert text is not None
+            overrides = yaml.safe_load(text)
+            # From dict to list of key=value
+            overrides = [ f"{k}={v}" for k, v in overrides.items() if not isinstance(v, (dict, list)) ]
 
         config_str = ",".join(overrides)
         config = dict([ ("override_" + entry).split('=') for entry in overrides ])
@@ -220,9 +239,11 @@ class LogProcessor:
         first_group = None
         if params["first"] and "override_sweep_filename" in config:
             first_group = dict()
-            for line in open(config["override_sweep_filename"], "r"):
-                first_group["command"] = line.strip()
-                break
+            sweep_filename = config.get("override_sweep_filename", '')
+            if sweep_filename != '':
+                for line in open(sweep_filename, "r"):
+                    first_group["command"] = line.strip()
+                    break
 
         if args.loader is None:
             # Try them one by one. 
