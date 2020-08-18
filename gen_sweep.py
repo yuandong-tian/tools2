@@ -1,4 +1,5 @@
 import sys
+import re
 import os
 import itertools
 import argparse
@@ -12,20 +13,22 @@ parser.add_argument('command', type=str, help="Sweep command")
 args = parser.parse_args()
 
 options = []
-tokens = args.command.split(" ")
+tokens = re.findall(r"([^\s]+=\{.*\}|[^\s]+)", args.command)
+
 for token in tokens:
     # For each token, convert anything like "=1,2" into "=1" and "=2".
-    items = token.split("=")
+    items = token.split("=", 2)
     if len(items) == 1:
         options.append([ dict(argument=items[0],n=1) ])
         continue
 
     b, e = items
 
-    # File expansion
+    # Execute the command..
     if e.startswith('{') and e.endswith('}'):
-        with open(os.path.expanduser(e[1:-1]), "r") as f:
-            e = f.readlines()
+        # execute the command. 
+        res = check_output(e[1:-1], shell=True).decode('utf-8')
+        e = re.split(r"[,\s\n]\s*", res.strip())
     else:
         e = e.split(",") 
 
