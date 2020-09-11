@@ -5,6 +5,13 @@ import itertools
 import argparse
 from subprocess import check_output
 
+'''
+Tools to run C++ sweeps. 
+
+One example:
+    python ~/tools2/gen_sweep.py "./jps --game=simplehanabi --iter=100 --iter_cfr=100 --seed={seq 1 100} --use_cfr_pure_init" --target_dir simplehanabi --create_context | parallel -j60
+'''
+
 parser = argparse.ArgumentParser(description='')
 parser.add_argument('--target_dir', default=None, type=str, help="Target dir")
 parser.add_argument('--create_context', action="store_true", default=False)

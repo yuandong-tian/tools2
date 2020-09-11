@@ -2,7 +2,7 @@ import os
 import sys
 import yaml
 
-config = yaml.load(open("/home/yuandong/.tools2.yaml"), Loader=yaml.FullLoader)
+config = yaml.load(open(os.path.expanduser("~/.tools2.yaml")))
 
 def get_checkpoint_output_path():
     return config["output_path"]
