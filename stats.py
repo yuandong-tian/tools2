@@ -8,69 +8,67 @@ import math
 import utils
 import pandas as pd
 import json
+from tabulate import tabulate
 
 def config2dict(s):
     return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
 
-def print_top_n(col, data, args):
-    n = min(args.topk, len(data))
+def print_top_n(col, df, args):
+    num_rows = df.shape[0]
+    n = min(args.topk, num_rows)
+    df_sorted = df.sort_values(by=[f"{col}_topk_mean"], ascending=not args.descending)
 
-    print(f"Top {n}/{len(data)} of {col} (each row takes average of top-{args.topk_mean} entries):")
-    for i in range(n):
-        print(f"{data[i]}")
+    print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{args.topk_mean} entries):")
+    print(tabulate(df_sorted.head(n), headers='keys'))
 
+def config_filter(row, config_strs):
+    if config_strs is None:
+        return True
 
-def process_log(df, key_stats, config_strs, order_func, args):
-    res = dict()
-    for col in df.columns:
-        if col not in key_stats:
-            continue
+    config = config2dict(row["_config_str"])
 
-        data = []
-        for row_idx, v in enumerate(df[col].values):
-            if isinstance(v, float):
-                v = [v]
+    for k, v in config_strs.items():
+        if config.get(k, None) != v:
+            return False
+    return True
 
-            this_data = []
-            for sample_idx, vv in enumerate(v): 
-                if args.first_k_iter is not None and sample_idx > args.first_k_iter:
-                    continue
+def process_func(row, cols, args):
+    if cols is None:
+        return row
 
-                if math.isnan(vv):
-                    continue
+    # For config str, remove 'githash' and 'sweep_filename'
+    row["_config_str"] = ",".join([item for item in row["_config_str"].split(",") if not item.split('=')[0] in ('githash', 'sweep_filename')])
 
-                if config_strs is not None:
-                    skip = False
-                    config_strs_row = config2dict(df["_config_str"][row_idx])
+    for col in cols:
+        data = row[col]
+        if args.first_k_iter is not None:
+            data = row[col][:args.first_k_iter]
 
-                    for k, v in config_strs.items():
-                        if config_strs_row.get(k, None) != v:
-                            skip = True
-                            break
-                    if skip:
-                        continue
+        if len(data) > 0:
+            data = np.array(data) 
+            inds = data.argsort()
+            if args.descending:
+                inds = inds[::-1]
+            data = data[inds]
 
-                this_data.append((vv, sample_idx))
+            best = data[0]
+            best_idx = inds[0]
 
-            # Compute top-5 average within a row. 
-            if len(this_data) == 0:
-                continue
-
-            this_data = sorted(this_data, key=order_func)
-            best = this_data[0][1]
-            this_data = [ vv for vv, idx in this_data]
-
-            if len(this_data) < args.topk_mean:
-                avg = sum(this_data) / len(this_data)
+            if len(data) < args.topk_mean:
+                topk_mean = sum(data) / len(data)
             else:
-                avg = sum(this_data[:args.topk_mean]) / args.topk_mean
+                topk_mean = sum(data[:args.topk_mean]) / args.topk_mean
+        else:
+            best = None
+            best_idx = None
+            topk_mean = None
 
-            data.append((avg, df["folder"][row_idx], df["_config_str"][row_idx], best, len(this_data)))
+        row[f"{col}_topk_mean"] = topk_mean
+        row[f"{col}_best"] = best
+        row[f"{col}_best_idx"] = best_idx
+        row[f"{col}_len"] = len(data)
 
-        data = sorted(data, key=order_func)
-        res[col] = data
-
-    return res
+    return row 
 
 def main():
     parser = argparse.ArgumentParser()
@@ -96,8 +94,6 @@ def main():
     else:
         config_strs = None
     
-    order_func = lambda x: -x[0] if args.descending else x[0]
-
     for logdir in logdirs:
         print(f"Processing {logdir}")
         summary_dir = utils.get_checkpoint_summary_path()
@@ -106,28 +102,32 @@ def main():
         filename = prefix + ".pkl"
         df = pickle.load(open(filename, "rb"))["df"]
 
-        all_data = process_log(df, key_stats, config_strs, order_func, args)
+        sel = df.apply(config_filter, axis=1, args=(config_strs,))
+        df = df[sel]
+        df = df.apply(process_func, axis=1, args=(key_stats, args))
 
         res = []
-        for col, data in all_data.items():
+        for col in key_stats:
+            sel = [f"{col}_topk_mean", "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
+            data = df[sel]
             print_top_n(col, data, args)
-            raw = np.array([v[0] for v in data])
+
+            d = df[f"{col}_topk_mean"] 
             entry = dict(
                 key=col,
-                min=data[-1][0],
-                max=data[0][0],
-                mean=np.mean(raw),
-                std=np.std(raw),
+                min=np.min(d),
+                max=np.max(d),
+                mean=np.mean(d),
+                std=np.std(d),
             )
             res.append(entry)
 
-        json_filename = prefix + "_top.json" 
-        json.dump(data, open(json_filename, "w")) 
-
-        print(f"Save json to {json_filename}")
-
         df_stats = pd.DataFrame(res)
         print(df_stats)
+
+        json_filename = prefix + "_top.json" 
+        json.dump(res, open(json_filename, "w")) 
+        print(f"Save json to {json_filename}")
 
 if __name__ == "__main__":
     main()
