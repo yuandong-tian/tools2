@@ -15,7 +15,6 @@ import pickle
 import argparse
 import utils
 
-log_matcher = re.compile(r" - \[(\d+)\]: train loss: ([\d\.]+), test loss: ([\d\.]+)") 
 json_matcher = re.compile(r"json_stats: (.*?)$")
 
 def to_cpu(x):
@@ -82,19 +81,20 @@ class LogProcessor:
         pass
 
     def _load_tensorboard(self, subfolder, args):
+        event_files = [ glob.glob(os.path.join(subfolder, args.tb_folder, "stat.tb/*")) ]
         if args.tb_choice == "largest":
             # Use the largest event_file.
-            files = [ (os.path.getsize(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = [ (os.path.getsize(event_file), event_file) for event_file in event_files ] 
             files = sorted(files, key=lambda x: -x[0])[:1]
         elif args.tb_choice == "earliest":
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
             files = sorted(files, key=lambda x: x[0])[:1]
         elif args.tb_choice == "latest":
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
             files = sorted(files, key=lambda x: -x[0])[:1]
         elif args.tb_choice == "all":
             # All files, earliest first
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in glob.glob(os.path.join(subfolder, "stat.tb/*")) ]
+            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
             files = sorted(files, key=lambda x: x[0])
         else:
             raise RuntimeError(f"Unknown tb_choice: {args.tb_choice}")
@@ -157,20 +157,24 @@ class LogProcessor:
         if len(all_log_files) == 0:
             return None
 
+        # First log file.
         log_file = all_log_files[0]
         entry = defaultdict(list)
         entry["folder"] = subfolder
 
-        cnt = 0
+        has_one = False
         with open(log_file, "r") as f:
             for line in f:
-                m = log_matcher.search(line)
-                if m:
-                    entry["train_loss"].append(float(m.group(2)))
-                    entry["test_loss"].append(float(m.group(3)))
-                    cnt += 1
+                for d in self.log_converter:
+                    m = d["match"].search(line)
+                    if not m:
+                        continue
 
-        if cnt > 0:
+                    for key_act, val_act in d["action"]:
+                        entry[eval(key_act)].append(eval(val_act))
+                    has_one = True
+
+        if has_one:
             return [ dict(entry) ]
         else:
             return None
@@ -205,6 +209,7 @@ class LogProcessor:
     def load_one(self, params):
         subfolder = params["subfolder"]
         args = params["args"]
+        self.log_converter = params["log_converter"]
 
         if os.path.exists(os.path.join(subfolder, ".hydra")):
             overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
@@ -212,7 +217,7 @@ class LogProcessor:
             multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
             overrides = multirun_info["hydra"]["overrides"]["task"]
         else:
-            # Last resort.. read *.log file directly.
+            # Last resort.. read *.log file directly to get the parameters.
             num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
             assert len(num_files) > 0
             log_file = num_files[0]
@@ -276,6 +281,8 @@ def main():
     parser.add_argument("--path_outside_checkpoint", action="store_true")
     parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
     parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
+    parser.add_argument("--tb_folder", type=str, default="stats")
+    parser.add_argument("--log_regexpr_json", type=str, default=None)
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
@@ -297,6 +304,12 @@ def main():
     else:
         logdirs = utils.parse_logdirs(args.logdirs)
 
+    if args.log_regexpr_json is not None:
+        data = json.load(open(args.log_regexpr_json, "r"))
+        log_converter = [ dict(match=re.compile(d["match"]), action=d["action"]) for d in data ]
+    else:
+        log_converter = None
+
     s = ""
     for root in logdirs:
         print(f"Processing {root}")
@@ -317,7 +330,7 @@ def main():
         if args.num_process == 1:
             # Do not use multi-processing.
             for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
-                entry = log_processor.load_one(dict(subfolder=subfolder, args=args, first= (i == 0)))
+                entry = log_processor.load_one(dict(subfolder=subfolder, args=args, log_converter=log_converter, first= (i == 0)))
                 if entry is not None:
                     res += entry
         else:
@@ -326,7 +339,7 @@ def main():
                 num_folders = len(subfolders)
                 chunksize = (num_folders + args.num_process - 1) // args.num_process
                 print(f"Chunksize: {chunksize}")
-                arguments = [ dict(subfolder=subfolder, args=args, first= (i == 0)) for i, subfolder in enumerate(subfolders) ]
+                arguments = [ dict(subfolder=subfolder, args=args, log_converter=log_converter, first= (i == 0)) for i, subfolder in enumerate(subfolders) ]
                 results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
