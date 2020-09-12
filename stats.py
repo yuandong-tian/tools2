@@ -16,7 +16,7 @@ def config2dict(s):
 def print_top_n(col, df, args):
     num_rows = df.shape[0]
     n = min(args.topk, num_rows)
-    df_sorted = df.sort_values(by=[f"{col}_topk_mean"], ascending=not args.descending)
+    df_sorted = df.sort_values(by=[col], ascending=not args.descending)
 
     print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{args.topk_mean} entries):")
     print(tabulate(df_sorted.head(n), headers='keys'))
@@ -32,12 +32,20 @@ def config_filter(row, config_strs):
             return False
     return True
 
+def group_func(row, groups):
+    config = config2dict(row["_config_str"])
+    for k in groups:
+        row[k] = config[k]
+    del row["_config_str"]
+    return row
+
 def process_func(row, cols, args):
     if cols is None:
         return row
 
     # For config str, remove 'githash' and 'sweep_filename'
-    row["_config_str"] = ",".join([item for item in row["_config_str"].split(",") if not item.split('=')[0] in ('githash', 'sweep_filename')])
+    config = config2dict(row["_config_str"])
+    row["_config_str"] = ",".join([f"{k}={v}" for k, v in config.items() if not k in ('githash', 'sweep_filename')])
 
     for col in cols:
         data = row[col]
@@ -63,7 +71,7 @@ def process_func(row, cols, args):
             best_idx = None
             topk_mean = None
 
-        row[f"{col}_topk_mean"] = topk_mean
+        row[col] = topk_mean
         row[f"{col}_best"] = best
         row[f"{col}_best_idx"] = best_idx
         row[f"{col}_len"] = len(data)
@@ -77,6 +85,7 @@ def main():
     parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--groups", type=str, default=None)
     parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--topk_mean", type=int, default=5)
 
@@ -93,6 +102,12 @@ def main():
         config_strs = config2dict(args.config)
     else:
         config_strs = None
+
+    res = []
+    if args.groups is not None:
+        groups = args.groups.split(",")
+    else:
+        groups = None
     
     for logdir in logdirs:
         print(f"Processing {logdir}")
@@ -106,14 +121,14 @@ def main():
         df = df[sel]
         df = df.apply(process_func, axis=1, args=(key_stats, args))
 
-        res = []
         for col in key_stats:
-            sel = [f"{col}_topk_mean", "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
+            sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
             data = df[sel]
             print_top_n(col, data, args)
 
-            d = df[f"{col}_topk_mean"] 
+            d = df[col]
             entry = dict(
+                logdir=logdir,
                 key=col,
                 min=np.min(d),
                 max=np.max(d),
@@ -122,12 +137,19 @@ def main():
             )
             res.append(entry)
 
-        df_stats = pd.DataFrame(res)
-        print(df_stats)
+        # Print out group means.
+        if groups is not None:
+            cols = [ col for col in key_stats ] + [ "_config_str" ]
+            aggs = { col: [ 'mean', 'std' ] for col in key_stats }
+            df = df[cols].apply(group_func, axis=1, args=(groups,)).groupby(groups).agg(aggs)
+            print(df)
 
-        json_filename = prefix + "_top.json" 
-        json.dump(res, open(json_filename, "w")) 
-        print(f"Save json to {json_filename}")
+        # json_filename = prefix + "_top.json" 
+        # json.dump(res, open(json_filename, "w")) 
+        # print(f"Save json to {json_filename}")
+
+    df_stats = pd.DataFrame(res)
+    print(df_stats)
 
 if __name__ == "__main__":
     main()
