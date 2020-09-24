@@ -35,7 +35,7 @@ def config_filter(row, config_strs):
 def group_func(row, groups):
     config = config2dict(row["_config_str"])
     for k in groups:
-        row[k] = config[k]
+        row[k] = config.get(k, None)
     del row["_config_str"]
     return row
 

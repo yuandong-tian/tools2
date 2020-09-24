@@ -4,6 +4,7 @@ import os
 import itertools
 import argparse
 from subprocess import check_output
+from time import sleep
 
 '''
 Tools to run C++ sweeps. 
@@ -58,6 +59,7 @@ if args.create_context:
     assert args.target_dir is not None
     try:
         os.mkdir(args.target_dir)
+        sleep(5)
     except FileExistsError:
         pass
 

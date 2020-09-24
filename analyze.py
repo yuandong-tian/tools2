@@ -16,6 +16,7 @@ import argparse
 import utils
 
 json_matcher = re.compile(r"json_stats: (.*?)$")
+filename_cfg_matcher = re.compile("[^=]+=[^=_]+")
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -153,12 +154,15 @@ class LogProcessor:
         return entries
 
     def _load_log(self, subfolder, args):
-        all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-        if len(all_log_files) == 0:
-            return None
+        if os.path.isdir(subfolder):
+            all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
+            if len(all_log_files) == 0:
+                return None
+            # First log file.
+            log_file = all_log_files[0]
+        else:
+            log_file = subfolder
 
-        # First log file.
-        log_file = all_log_files[0]
         entry = defaultdict(list)
         entry["folder"] = subfolder
 
@@ -206,35 +210,49 @@ class LogProcessor:
         else:
             return None
 
+    def _load_cfg(self, subfolder):
+        ''' Return list [ "key=value" ] '''
+        if not os.path.isdir(subfolder):
+            # If it is not a dir, then just read from its filename.
+            s = os.path.splitext(os.path.basename(subfolder))[0]
+            cfg = [ m for m in filename_cfg_matcher.findall(s) ]
+            cfg = [ v.strip("_") for v in cfg ]
+            return cfg
+
+        if os.path.exists(os.path.join(subfolder, ".hydra")):
+            return yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+
+        if os.path.exists(os.path.join(subfolder, "multirun.yaml")):
+            multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
+            return multirun_info["hydra"]["overrides"]["task"]
+
+        # Last resort.. read *.log file directly to get the parameters.
+        num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
+        assert len(num_files) > 0
+        log_file = num_files[0]
+        text = None
+        for line in open(log_file):
+            if text is None:
+                if not line.startswith("[") and not line.startswith(" "):
+                    text = line
+            else:
+                if line.startswith("["):
+                    break
+                text += line
+
+        assert text is not None
+        overrides = yaml.safe_load(text)
+        # From dict to list of key=value
+        return [ f"{k}={v}" for k, v in overrides.items() if not isinstance(v, (dict, list)) ]
+
     def load_one(self, params):
         subfolder = params["subfolder"]
         args = params["args"]
         self.log_converter = params["log_converter"]
 
-        if os.path.exists(os.path.join(subfolder, ".hydra")):
-            overrides = yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
-        elif os.path.exists(os.path.join(subfolder, "multirun.yaml")):
-            multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
-            overrides = multirun_info["hydra"]["overrides"]["task"]
-        else:
-            # Last resort.. read *.log file directly to get the parameters.
-            num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-            assert len(num_files) > 0
-            log_file = num_files[0]
-            text = None
-            for line in open(log_file):
-                if text is None:
-                    if not line.startswith("[") and not line.startswith(" "):
-                        text = line
-                else:
-                    if line.startswith("["):
-                        break
-                    text += line
-
-            assert text is not None
-            overrides = yaml.safe_load(text)
-            # From dict to list of key=value
-            overrides = [ f"{k}={v}" for k, v in overrides.items() if not isinstance(v, (dict, list)) ]
+        overrides = self._load_cfg(subfolder)
+        if len(overrides) == 0:
+            return None
 
         config_str = ",".join(overrides)
         config = dict([ ("override_" + entry).split('=') for entry in overrides ])
@@ -262,12 +280,14 @@ class LogProcessor:
         else:
             entries = eval(f"self._load_{args.loader}(subfolder, args)")
 
-        if entries is not None:
-            for entry in entries:
-                entry.update(config)
+        if entries is None:
+            return None
 
-            if first_group is not None:
-                entries[0]["_first"] = first_group
+        for entry in entries:
+            entry.update(config)
+
+        if first_group is not None:
+            entries[0]["_first"] = first_group
 
         return entries
 
@@ -283,6 +303,7 @@ def main():
     parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
     parser.add_argument("--tb_folder", type=str, default="stats")
     parser.add_argument("--log_regexpr_json", type=str, default=None)
+    parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
 
     args = parser.parse_args()
@@ -322,6 +343,8 @@ def main():
 
         if args.no_sub_folder:
             subfolders = [ curr_path ]
+        elif args.wildcard_as_subfolder is not None:
+            subfolders = [ f for f in glob.glob(os.path.join(curr_path, args.wildcard_as_subfolder)) ] 
         else:
             subfolders = [ subfolder for subfolder in glob.glob(os.path.join(curr_path, "*")) if not subfolder.startswith('.') and os.path.isdir(subfolder) ]
 
