@@ -45,14 +45,13 @@ for token in tokens:
     options.append([ dict(n=len(e), abbr=f"{b.strip('-')}={ee if len(str(ee)) < 20 else i}", argument=f"{b}={ee}") for i, ee in enumerate(e) if ee != "" ])
 
 # Enumerate all possible combinations and output.
-n = 0
+all_commands = []
 for i, entry in enumerate(itertools.product(*options)):
     command = " ".join([ e["argument"] for e in entry ])
     prefix = "_".join([ e["abbr"] for e in entry if e["n"] > 1])
     if args.target_dir is not None:
         command += f" > {args.target_dir}/{prefix}.txt" 
-    print(command)
-    n += 1
+    all_commands.append(command)
 
 if args.create_context:
     # Create context.
@@ -65,9 +64,12 @@ if args.create_context:
 
     with open(os.path.join(args.target_dir, "_context.log"), "w") as f:
         f.write(args.command + "\n")
-        f.write(f"{n} jobs\n")
+        f.write(f"{len(all_commands)} jobs\n")
         f.write(check_output("git -C ./ log --pretty=format:'%H' -n 1", shell=True).decode('utf-8'))
         f.write(check_output("git diff", shell=True).decode('utf-8'))
         f.write(check_output("git diff --cached", shell=True).decode('utf-8'))
-        
+
+# Finally print things out.
+for command in all_commands:
+    print(command)
 
