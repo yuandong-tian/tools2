@@ -9,6 +9,7 @@ import utils
 import pandas as pd
 import json
 from tabulate import tabulate
+from collections import OrderedDict
 
 def config2dict(s):
     return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
@@ -85,7 +86,8 @@ def main():
     parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--config", type=str, default=None)
-    parser.add_argument("--groups", type=str, default=None)
+    parser.add_argument("--groups", type=str, default=None,
+                        help="comma separated 'key=type' string to convert columns to different types than string")
     parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--topk_mean", type=int, default=5)
 
@@ -103,11 +105,14 @@ def main():
     else:
         config_strs = None
 
-    res = []
+    groups = None
     if args.groups is not None:
-        groups = args.groups.split(",")
-    else:
-        groups = None
+        groups = OrderedDict()
+        for kv in args.groups.split(","):
+            items = kv.split("=")
+            groups[items[0]] = items[1] if len(items) > 1 else 'str'
+    
+    res = []
     
     for logdir in logdirs:
         print(f"Processing {logdir}")
@@ -141,7 +146,9 @@ def main():
         if groups is not None:
             cols = [ col for col in key_stats ] + [ "_config_str" ]
             aggs = { col: [ 'mean', 'std' ] for col in key_stats }
-            df = df[cols].apply(group_func, axis=1, args=(groups,)).groupby(groups).agg(aggs)
+            df = df[cols].apply(group_func, axis=1, args=(groups,))
+            df = df.astype(groups)
+            df = df.groupby(list(groups.keys())).agg(aggs)
             print(df)
 
         # json_filename = prefix + "_top.json" 
