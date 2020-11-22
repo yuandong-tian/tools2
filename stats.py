@@ -54,6 +54,10 @@ def process_func(row, cols, args):
             data = row[col][:args.first_k_iter]
 
         if len(data) > 0:
+            if isinstance(data[0], dict):
+                assert args.subkey is not None, "With list of dict as data, a subkey is needed!"
+                # Use subkey
+                data = [ d[args.subkey] for d in data ]
             data = np.array(data) 
             inds = data.argsort()
             if args.descending:
@@ -83,6 +87,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
     parser.add_argument("--key_stats", type=str, default=None)
+    parser.add_argument("--subkey", type=str, default=None, help="subkey needs to be specified if the time series is a list of dict")
     parser.add_argument("--descending", action="store_true")
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--config", type=str, default=None)

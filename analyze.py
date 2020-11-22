@@ -15,7 +15,6 @@ import pickle
 import argparse
 import utils
 
-json_matcher = re.compile(r"json_stats: (.*?)$")
 filename_cfg_matcher = re.compile("[^=]+=[^=_]+")
 
 def to_cpu(x):
@@ -195,10 +194,12 @@ class LogProcessor:
         cnt = 0
         with open(log_file, "r") as f:
             for line in f:
-                m = json_matcher.search(line)
-                if not m:
+                index = line.find(args.json_prefix)
+
+                if index < 0:
                     continue
-                this_entry = json.loads(m.group(1))
+
+                this_entry = json.loads(line[index + len(args.json_prefix):])
 
                 for k, v in this_entry.items():
                     entry[k].append(v)
@@ -300,6 +301,7 @@ def main():
     parser.add_argument("--no_sub_folder", action="store_true")
     parser.add_argument("--path_outside_checkpoint", action="store_true")
     parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
+    parser.add_argument("--json_prefix", default="json_stats: ")
     parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
     parser.add_argument("--tb_folder", type=str, default="stats")
     parser.add_argument("--log_regexpr_json", type=str, default=None)
