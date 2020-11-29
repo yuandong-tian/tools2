@@ -24,6 +24,29 @@ def print_top_n(col, df, args):
     print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{args.topk_mean} entries):")
     print(tabulate(df_sorted.head(n), headers='keys'))
 
+def print_col_infos(df):
+    # Print out possible values in the columns. 
+    cond_vars = []
+    sweep_vars = []
+    override_prefix = "override_" 
+    for name, column in df.iteritems():
+        if name.startswith(override_prefix):
+            rec = column.unique()
+            s = f"{name[len(override_prefix):]}: {rec}"
+            if len(rec) == 1:
+                cond_vars.append(s)
+            else:
+                sweep_vars.append(s)
+    print()
+    print("Conditional variables: ")
+    for entry in cond_vars:
+        print(entry)
+    print()
+    print("Sweep variables:")
+    for entry in sweep_vars:
+        print(entry)
+    print()
+
 def config_filter(row, config_strs):
     if config_strs is None:
         return True
@@ -136,6 +159,7 @@ def main():
                 os.mkdir(prefix)
             log_record = os.path.join(prefix, filename)
             print(f"Output stored in {log_record}")
+
             sys.stdout = open(log_record, "w") 
             print(command_line)
 
@@ -143,9 +167,15 @@ def main():
         filename = prefix + ".pkl"
         df = pickle.load(open(filename, "rb"))["df"]
 
+        # keep those records that satisfy config_filter
         sel = df.apply(config_filter, axis=1, args=(config_strs,))
         df = df[sel]
+
+        # Process the records. 
         df = df.apply(process_func, axis=1, args=(key_stats, args))
+
+        # Print information in each column 
+        print_col_infos(df)
 
         for col in key_stats:
             sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
