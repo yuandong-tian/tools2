@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 import yaml
 
 config = yaml.load(open(os.path.expanduser("~/.tools2.yaml")))
@@ -23,6 +24,9 @@ def parse_logdirs(logdirs):
         res.append(d)
 
     return res
+
+def signature():
+    return str(datetime.now()).replace(" ", "_").replace(":", "-").replace(".", "_")
 
 def compute_avg(epoch, values, span=20):
     minstep = min(max(epoch - span, 0), len(values))

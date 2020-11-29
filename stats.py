@@ -11,6 +11,8 @@ import json
 from tabulate import tabulate
 from collections import OrderedDict
 
+from utils import signature
+
 def config2dict(s):
     return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
 
@@ -95,6 +97,9 @@ def main():
                         help="comma separated 'key=type' string to convert columns to different types than string")
     parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--topk_mean", type=int, default=5)
+    parser.add_argument("--output_no_save", action="store_true")
+
+    command_line = " ".join(sys.argv)
 
     args = parser.parse_args()
 
@@ -117,13 +122,24 @@ def main():
             items = kv.split("=")
             groups[items[0]] = items[1] if len(items) > 1 else 'str'
     
+    summary_dir = utils.get_checkpoint_summary_path()
+
     res = []
+    filename = "stats_" + signature() + ".txt"
+    default_stdout = sys.stdout 
     
     for logdir in logdirs:
-        print(f"Processing {logdir}")
-        summary_dir = utils.get_checkpoint_summary_path()
         prefix = os.path.join(summary_dir, logdir.replace("/", "_"))
 
+        if not args.output_no_save:
+            if not os.path.exists(prefix):
+                os.mkdir(prefix)
+            log_record = os.path.join(prefix, filename)
+            print(f"Output stored in {log_record}")
+            sys.stdout = open(log_record, "w") 
+            print(command_line)
+
+        print(f"Processing {logdir}")
         filename = prefix + ".pkl"
         df = pickle.load(open(filename, "rb"))["df"]
 
@@ -159,6 +175,13 @@ def main():
         # json_filename = prefix + "_top.json" 
         # json.dump(res, open(json_filename, "w")) 
         # print(f"Save json to {json_filename}")
+        if not args.output_no_save:
+            f = sys.stdout
+            sys.stdout = default_stdout 
+            f.close()
+            with open(log_record, "r") as f:
+                for line in f:
+                    print(line, end='')
 
     df_stats = pd.DataFrame(res)
     print(df_stats)
