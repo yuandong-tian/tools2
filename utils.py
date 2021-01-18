@@ -2,8 +2,10 @@ import os
 import sys
 from datetime import datetime
 import yaml
+import re
 
 config = yaml.load(open(os.path.expanduser("~/.tools2.yaml")))
+output_dir_matcher = re.compile(r"Sweep output dir\s*:\s*(.*)$")
 
 def get_checkpoint_output_path():
     return config["output_path"]
@@ -19,6 +21,13 @@ def parse_logdirs(logdirs):
 
     res = []
     for d in logdirs:
+        if d.endswith(".log"):
+            # A file. Open it and find Sweep dir
+            for line in open(d):
+                m = output_dir_matcher.search(line)
+                if m:
+                    d = m.group(1)
+                    break
         if d.startswith(checkpoint_output_path):
             d = d[len(checkpoint_output_path) + 1:]
         res.append(d)

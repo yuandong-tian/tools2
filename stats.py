@@ -13,6 +13,11 @@ from collections import OrderedDict
 
 from utils import signature
 
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+pd.set_option('display.max_colwidth', -1)
+
 def config2dict(s):
     return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
 
@@ -26,26 +31,28 @@ def print_top_n(col, df, args):
 
 def print_col_infos(df):
     # Print out possible values in the columns. 
-    cond_vars = []
-    sweep_vars = []
+    cond_vars = {}
+    sweep_vars = {}
     override_prefix = "override_" 
     for name, column in df.iteritems():
         if name.startswith(override_prefix):
             rec = column.unique()
-            s = f"{name[len(override_prefix):]}: {rec}"
+            s = { name[len(override_prefix):] : rec }
             if len(rec) == 1:
-                cond_vars.append(s)
+                cond_vars.update(s)
             else:
-                sweep_vars.append(s)
+                sweep_vars.update(s)
     print()
     print("Conditional variables: ")
-    for entry in cond_vars:
-        print(entry)
+    for k, v in cond_vars.items():
+        print(f"{k}: {v}")
     print()
     print("Sweep variables:")
-    for entry in sweep_vars:
-        print(entry)
+    for k, v in sweep_vars.items():
+        print(f"{k}: {v}")
     print()
+
+    return cond_vars,sweep_vars
 
 def config_filter(row, config_strs):
     if config_strs is None:
@@ -117,7 +124,7 @@ def main():
     parser.add_argument("--first_k_iter", type=int, default=None)
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--groups", type=str, default=None,
-                        help="comma separated 'key=type' string to convert columns to different types than string")
+                        help="comma separated 'key=type' string to convert columns to different types than string. if set to '/', then groups automatically to sweep parameters")
     parser.add_argument("--topk", type=int, default=10)
     parser.add_argument("--topk_mean", type=int, default=5)
     parser.add_argument("--output_no_save", action="store_true")
@@ -139,7 +146,7 @@ def main():
         config_strs = None
 
     groups = None
-    if args.groups is not None:
+    if args.groups is not None and args.groups != "/":
         groups = OrderedDict()
         for kv in args.groups.split(","):
             items = kv.split("=")
@@ -170,12 +177,20 @@ def main():
         # keep those records that satisfy config_filter
         sel = df.apply(config_filter, axis=1, args=(config_strs,))
         df = df[sel]
+        if df.shape[0] == 0:
+            print("No selection!")
+            continue
 
         # Process the records. 
         df = df.apply(process_func, axis=1, args=(key_stats, args))
 
         # Print information in each column 
-        print_col_infos(df)
+        cond_vars, sweep_vars = print_col_infos(df)
+        if args.groups == "/":
+            groups = OrderedDict()
+            for k, v in sweep_vars.items():
+                if k != "seed":
+                    groups[k] = 'str'
 
         for col in key_stats:
             sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
@@ -201,6 +216,9 @@ def main():
             df = df.astype(groups)
             df = df.groupby(list(groups.keys())).agg(aggs)
             print(df)
+            c = df[col]["mean"]
+            print(f"max_val: {c.max()} at {c.idxmax()}")
+            print(f"min_val: {c.min()} at {c.idxmin()}")
 
         # json_filename = prefix + "_top.json" 
         # json.dump(res, open(json_filename, "w")) 
