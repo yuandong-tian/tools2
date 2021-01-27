@@ -1,5 +1,6 @@
 from tensorboard.backend.event_processing import event_accumulator
 from collections import defaultdict
+from datetime import timedelta
 import re
 import time
 import os
@@ -162,8 +163,12 @@ class LogProcessor:
         else:
             log_file = subfolder
 
+        sec_diff = time.time() - os.path.getmtime(log_file)
+        td = timedelta(seconds=sec_diff)
+
         entry = defaultdict(list)
         entry["folder"] = subfolder
+        entry["modified_since"] = str(td)
 
         has_one = False
         with open(log_file, "r") as f:

@@ -2,7 +2,6 @@ import pickle
 import argparse
 import os
 import sys
-from itertools import chain
 import numpy as np
 import math
 import utils
@@ -13,13 +12,7 @@ from collections import OrderedDict
 
 from utils import signature
 
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', None)
-pd.set_option('display.max_colwidth', -1)
-
-def config2dict(s):
-    return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
+from utils_stats import *
 
 def print_top_n(col, df, args):
     num_rows = df.shape[0]
@@ -54,66 +47,6 @@ def print_col_infos(df):
 
     return cond_vars,sweep_vars
 
-def config_filter(row, config_strs):
-    if config_strs is None:
-        return True
-
-    config = config2dict(row["_config_str"])
-
-    for k, v in config_strs.items():
-        if config.get(k, None) != v:
-            return False
-    return True
-
-def group_func(row, groups):
-    config = config2dict(row["_config_str"])
-    for k in groups:
-        row[k] = config.get(k, None)
-    del row["_config_str"]
-    return row
-
-def process_func(row, cols, args):
-    if cols is None:
-        return row
-
-    # For config str, remove 'githash' and 'sweep_filename'
-    config = config2dict(row["_config_str"])
-    row["_config_str"] = ",".join([f"{k}={v}" for k, v in config.items() if not k in ('githash', 'sweep_filename')])
-
-    for col in cols:
-        data = row[col]
-        if args.first_k_iter is not None:
-            data = row[col][:args.first_k_iter]
-
-        if len(data) > 0:
-            if isinstance(data[0], dict):
-                assert args.subkey is not None, "With list of dict as data, a subkey is needed!"
-                # Use subkey
-                data = [ d[args.subkey] for d in data ]
-            data = np.array(data) 
-            inds = data.argsort()
-            if args.descending:
-                inds = inds[::-1]
-            data = data[inds]
-
-            best = data[0]
-            best_idx = inds[0]
-
-            if len(data) < args.topk_mean:
-                topk_mean = sum(data) / len(data)
-            else:
-                topk_mean = sum(data[:args.topk_mean]) / args.topk_mean
-        else:
-            best = None
-            best_idx = None
-            topk_mean = None
-
-        row[col] = topk_mean
-        row[f"{col}_best"] = best
-        row[f"{col}_best_idx"] = best_idx
-        row[f"{col}_len"] = len(data)
-
-    return row 
 
 def main():
     parser = argparse.ArgumentParser()
@@ -192,8 +125,10 @@ def main():
                 if k != "seed":
                     groups[k] = 'str'
 
+        print("Recent modified since: ", df["modified_since"].min())
+
         for col in key_stats:
-            sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
+            sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
             data = df[sel]
             print_top_n(col, data, args)
 
@@ -217,8 +152,8 @@ def main():
             df = df.groupby(list(groups.keys())).agg(aggs)
             print(df)
             c = df[col]["mean"]
-            print(f"max_val: {c.max()} at {c.idxmax()}")
-            print(f"min_val: {c.min()} at {c.idxmin()}")
+            print(f"max_val: {c.max()} at " + ",".join([f"{g}={v}" for g, v in zip(groups, c.idxmax())]))
+            print(f"min_val: {c.min()} at " + ",".join([f"{g}={v}" for g, v in zip(groups, c.idxmin())]))
 
         # json_filename = prefix + "_top.json" 
         # json.dump(res, open(json_filename, "w")) 
