@@ -316,7 +316,7 @@ def main():
     parser.add_argument("--log_regexpr_json", type=str, default=None)
     parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
-    parser.add_argument("--load_submitit_log", type=bool, default=False, help="Whether we load submitit recorded logs")
+    parser.add_argument("--load_submitit_log", action="store_true", help="Whether we load submitit recorded logs")
 
     args = parser.parse_args()
 
