@@ -28,9 +28,18 @@ def parse_logdirs(logdirs):
                 if m:
                     d = m.group(1)
                     break
-        if d.startswith(checkpoint_output_path):
-            d = d[len(checkpoint_output_path) + 1:]
-        res.append(d)
+
+        # If d is absolute path, keep it. 
+        # If d is relative, check whether it is present in the current folder, 
+        #    if so, keep, otherwise connect with the checkpoint_output_path
+        if d[0] != '/':
+            for candidate_root in [checkpoint_output_path, os.getcwd()]:
+                full_path = os.path.join(candidate_root, d)
+                if os.path.exists(full_path):
+                    res.append(full_path)
+                    break
+        else:
+            res.append(d)
 
     return res
 

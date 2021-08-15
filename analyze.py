@@ -153,7 +153,7 @@ class LogProcessor:
 
         return entries
 
-    def _load_log(self, subfolder, args):
+    def _get_log_file(self, subfolder, args):
         if os.path.isdir(subfolder):
             all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
             if len(all_log_files) == 0:
@@ -169,6 +169,11 @@ class LogProcessor:
         entry = defaultdict(list)
         entry["folder"] = subfolder
         entry["modified_since"] = str(td)
+
+        return entry, log_file
+
+    def _load_log(self, subfolder, args):
+        entry, log_file = self._get_log_file(subfolder, args)
 
         has_one = False
         with open(log_file, "r") as f:
@@ -188,13 +193,7 @@ class LogProcessor:
             return None
 
     def _load_json(self, subfolder, args):
-        all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-        if len(all_log_files) == 0:
-            return None
-
-        log_file = all_log_files[0]
-        entry = defaultdict(list)
-        entry["folder"] = subfolder
+        entry, log_file = self._get_log_file(subfolder, args)
 
         cnt = 0
         with open(log_file, "r") as f:
@@ -304,7 +303,6 @@ def main():
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
-    parser.add_argument("--path_outside_checkpoint", action="store_true")
     parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
     parser.add_argument("--json_prefix", default="json_stats: ")
     parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
@@ -327,10 +325,8 @@ def main():
             basename = os.path.basename(summary_file)
             basename = os.path.splitext(basename)[0]
             logdirs.append(basename.replace("_", "/"))
-    elif args.path_outside_checkpoint:
-        logdirs = args.logdirs.split(",")
-    else:
-        logdirs = utils.parse_logdirs(args.logdirs)
+    
+    logdirs = utils.parse_logdirs(args.logdirs)
 
     if args.log_regexpr_json is not None:
         data = json.load(open(args.log_regexpr_json, "r"))
@@ -339,14 +335,9 @@ def main():
         log_converter = None
 
     s = ""
-    for root in logdirs:
-        print(f"Processing {root}")
-        df_name = root.replace("/", "_")
-
-        if not args.path_outside_checkpoint:
-            curr_path = os.path.join(utils.get_checkpoint_output_path(), root)
-        else:
-            curr_path = root
+    for curr_path in logdirs:
+        print(f"Processing {curr_path}")
+        df_name = curr_path.replace("/", "_")
 
         if args.no_sub_folder:
             subfolders = [ curr_path ]
