@@ -187,6 +187,7 @@ def main():
     default_stdout = sys.stdout 
     
     for logdir in logdirs:
+        logdir = utils.preprocess_logdir(logdir)
         prefix = os.path.join(summary_dir, logdir.replace("/", "_"))
 
         if not args.output_no_save:

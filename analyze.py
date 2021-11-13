@@ -344,6 +344,7 @@ def main():
     s = ""
     for curr_path in logdirs:
         print(f"Processing {curr_path}")
+        curr_path = utils.preprocess_logdir(curr_path)
         df_name = curr_path.replace("/", "_")
 
         if args.no_sub_folder:

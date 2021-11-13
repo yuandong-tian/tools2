@@ -43,6 +43,22 @@ def parse_logdirs(logdirs):
 
     return res
 
+def preprocess_logdir(logdir):
+    if not os.path.isdir(logdir):
+        # Grab a line with "sweep output folder" and match it 
+        subfolder_matcher = re.compile(r"sweep output dir : (.*)$")
+        real_folder = None
+        for line in open(logdir, "r"):
+            m = subfolder_matcher.search(line)
+            if m:
+                real_folder = m.group(1)
+                break
+        assert real_folder is not None, f"{logdir} as a file, should contain real folder but it cannot be found!" 
+        logdir = real_folder
+        print(f"Redirect to {logdir}")
+    return logdir
+
+
 def signature():
     return str(datetime.now()).replace(" ", "_").replace(":", "-").replace(".", "_")
 
