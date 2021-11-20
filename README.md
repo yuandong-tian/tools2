@@ -37,7 +37,7 @@ python ~/tools2/serve_result.py check_list.txt --match_file `pwd`/match_log3.jso
 ```
 Then it will create `progress.md` in your current folder every 60 sec. You can use `markserv` to serve the file for web browsing, e.g.,  
 ```
-markserv progress.md 
+markserv -p 5000 progress.md
 ```
 Please check https://github.com/markserv/markserv
 
