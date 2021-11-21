@@ -16,6 +16,8 @@ from utils import signature
 
 from utils_stats import *
 
+pd.options.display.max_rows = 1000
+
 def print_top_n(col, df, args):
     num_rows = df.shape[0]
     n = min(args.topk, num_rows)
