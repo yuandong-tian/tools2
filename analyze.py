@@ -15,8 +15,9 @@ import tqdm
 import pickle
 import argparse
 import utils
+import importlib.util
 
-filename_cfg_matcher = re.compile("[^=]+=[^=_]+")
+from common_utils import MultiRunUtil
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -221,47 +222,25 @@ class LogProcessor:
         else:
             return None
 
-    def _load_cfg(self, subfolder):
-        ''' Return list [ "key=value" ] '''
-        if not os.path.isdir(subfolder):
-            # If it is not a dir, then just read from its filename.
-            s = os.path.splitext(os.path.basename(subfolder))[0]
-            cfg = [ m for m in filename_cfg_matcher.findall(s) ]
-            cfg = [ v.strip("_") for v in cfg ]
-            return cfg
+    def _load_module(self, subfolder, args):
+        spec = importlib.util.spec_from_file_location("", args.load_module_path)
+        mdl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mdl)
 
-        if os.path.exists(os.path.join(subfolder, ".hydra")):
-            return yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
+        #we import all names that don't begin with _ and main
+        names = [x for x in mdl.__dict__ if not x.startswith("_") and not x == "main"]
 
-        if os.path.exists(os.path.join(subfolder, "multirun.yaml")):
-            multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
-            return multirun_info["hydra"]["overrides"]["task"]
-
-        # Last resort.. read *.log file directly to get the parameters.
-        num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-        assert len(num_files) > 0
-        log_file = num_files[0]
-        text = None
-        for line in open(log_file):
-            if text is None:
-                if not line.startswith("[") and not line.startswith(" "):
-                    text = line
-            else:
-                if line.startswith("["):
-                    break
-                text += line
-
-        assert text is not None
-        overrides = yaml.safe_load(text)
-        # From dict to list of key=value
-        return [ f"{k}={v}" for k, v in overrides.items() if not isinstance(v, (dict, list)) ]
+        # now drag them in
+        globals().update({k: getattr(mdl, k) for k in names})
+        return mdl._check_result(subfolder, args)
 
     def load_one(self, params):
         subfolder = params["subfolder"]
         args = params["args"]
         self.log_converter = params["log_converter"]
 
-        overrides = self._load_cfg(subfolder)
+        mru = MultiRunUtil()
+        overrides = mru.load_cfg(subfolder)
         if len(overrides) == 0:
             return None
 
@@ -309,7 +288,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
     parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
-    parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
+    parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "checkpoint", "log", "module"])
     parser.add_argument("--json_prefix", default="json_stats: ")
     parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
     parser.add_argument("--tb_folder", type=str, default="stats")
@@ -317,6 +296,7 @@ def main():
     parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
     parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
     parser.add_argument("--load_submitit_log", action="store_true", help="Whether we load submitit recorded logs")
+    parser.add_argument("--load_module_path", type=str, default=None)
 
     args = parser.parse_args()
 

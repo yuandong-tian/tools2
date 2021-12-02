@@ -27,7 +27,7 @@ def config_filter(row, config_strs):
             return False
     return True
 
-def group_func(row, groups):
+def configstr2cols(row, groups):
     config = config2dict(row["_config_str"])
     for k in groups:
         row[k] = config.get(k, None)
@@ -62,6 +62,9 @@ def process_func(row, cols, args):
             all_col_names = [ col ]
 
         for data, col_name in zip(all_data, all_col_names):
+            if isinstance(data, (int,float)):
+                data = [data]
+
             if len(data) > 0:
                 if isinstance(data[0], dict):
                     assert args.subkey is not None, "With list of dict as data, a subkey is needed!"

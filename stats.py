@@ -128,6 +128,13 @@ class LatexAggFunc:
         std_val = series.std()
         return fr"${mean_val:.{self.precision}f}\pm {std_val:.{self.precision}f}$"
 
+class FolderAggFunc:
+    def __init__(self, max_simple=5):
+        self.max_simple = max_simple
+
+    def agg(self, series):
+        return ",".join([ os.path.basename(f) for f in series ])
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--logdirs", type=str)
@@ -222,7 +229,8 @@ def main():
         cond_vars, sweep_vars = print_col_infos(df)
         groups = get_group_spec(args.groups, sweep_vars)
 
-        print("Recent modified since: ", df["modified_since"].min())
+        if "modified_since" in df:
+            print("Recent modified since: ", df["modified_since"].min())
 
         for col in key_stats:
             sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
@@ -251,14 +259,22 @@ def main():
 
         # Print out group means.
         if groups is not None:
-            cols = [ col for col in key_stats ] + [ "_config_str" ]
+            cols = [ col for col in key_stats ] + [ "_config_str", "folder" ]
+
+            # Add aggregation function for each key_stats
             if args.use_latex_agg:
                 agg_obj = LatexAggFunc(precision=args.latex_precision)
                 aggs = { col: [ agg_obj.agg ] for col in key_stats }
             else:
                 aggs = { col: [ 'mean', 'std' ] for col in key_stats }
 
-            df = df[cols].apply(group_func, axis=1, args=(groups,))
+            # Add folder aggregation. List all subfolder names for each breakdown category. 
+            folder_agg_obj = FolderAggFunc()
+            aggs["folder"] = [ folder_agg_obj.agg ]
+
+            # convert _config_str to multiple columns, each is a hyper-parameter. 
+            df = df[cols].apply(configstr2cols, axis="columns", args=(groups,))
+            # Group according to the specified groups, and aggregated with aggration function. 
             df = df.groupby(groups).agg(aggs)
             print(df)
 

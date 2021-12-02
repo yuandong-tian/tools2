@@ -38,7 +38,7 @@ class MyHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
 	</style>
         <form method="POST">
             <p>Which run to check</p>
-            <textarea name="content" id="content"></textarea>
+            <textarea name="content" id="content" style="width: 500px; height: 100px;"></textarea>
             <input type="submit">
          </form>
         <form method="GET">
@@ -87,7 +87,7 @@ parser.add_argument('--check_freq', type=int, default=60, help="check frequency 
 parser.add_argument('--match_file', type=str, default=None)
 parser.add_argument('--key_stats', type=str, default="acc")
 parser.add_argument('--descending', action="store_true")
-parser.add_argument('--port', default=5000, type=int)
+parser.add_argument('--port', default=4999, type=int)
 
 args = parser.parse_args()
 
@@ -128,16 +128,20 @@ while True:
     f = open("_tmp.md", "w")
     f.write(f"# {datetime.now()} \n\n")
     for title, r in records.items():
-        cmd = f"python {abs_path}/analyze.py --logdirs {r} --log_regexpr_json {args.match_file} --loader=log --num_process 1" 
-        print(cmd)
-        check_output(cmd, shell=True)
-        cmd = f"python {abs_path}/stats.py --logdirs {r} --key_stats {args.key_stats} --topk_mean 1 --groups / "
-        if args.descending:
-            cmd += "--descending"
-        print(cmd)
-        output = check_output(cmd, shell=True).decode('utf-8')
         f.write(f"## {title}\n\n")
-        f.write(f"```\n{output}\n```\n\n")
+        try:
+            cmd = f"python {abs_path}/analyze.py --logdirs {r} --log_regexpr_json {args.match_file} --loader=log --num_process 1" 
+            print(cmd)
+            check_output(cmd, shell=True)
+            cmd = f"python {abs_path}/stats.py --logdirs {r} --key_stats {args.key_stats} --topk_mean 1 --groups / "
+            if args.descending:
+                cmd += "--descending"
+            print(cmd)
+            output = check_output(cmd, shell=True).decode('utf-8')
+            f.write(f"```\n{output}\n```\n\n")
+        except:
+            f.write("```No data available```\n\n")
+
     f.close()
     check_output("pandoc _tmp.md --output _tmp.html", shell=True)
     with open("_tmp.html", "r") as f:
