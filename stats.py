@@ -15,15 +15,16 @@ from collections import OrderedDict
 from utils import signature
 
 from utils_stats import *
+from common_utils import MultiRunUtil
 
 pd.options.display.max_rows = 1000
 
-def print_top_n(col, df, args):
+def print_top_n(col, df, params):
     num_rows = df.shape[0]
-    n = min(args.topk, num_rows)
-    df_sorted = df.sort_values(by=[col], ascending=not args.descending)
+    n = min(params["topk"], num_rows)
+    df_sorted = df.sort_values(by=[col], ascending=not params["descending"])
 
-    print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{args.topk_mean} entries):")
+    print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{params['topk_mean']} entries):")
     print(tabulate(df_sorted.head(n), headers='keys'))
 
 def print_col_infos(df):
@@ -119,14 +120,20 @@ def get_group_spec(group_str, sweep_vars):
     else:
         return None
 
-class LatexAggFunc:
-    def __init__(self, precision=2):
+class MeanStdAggFunc:
+    def __init__(self, precision=2, use_latex=False):
         self.precision = precision
+        self.use_latex = use_latex
 
     def agg(self, series):
         mean_val = series.mean()
         std_val = series.std()
-        return fr"${mean_val:.{self.precision}f}\pm {std_val:.{self.precision}f}$"
+        sz = series.size
+        if self.use_latex:
+            return fr"${mean_val:.{self.precision}f}\pm {std_val:.{self.precision}f}$"
+        else:
+            return fr"{mean_val:.{self.precision}f} ± {std_val:.{self.precision}f}"
+
 
 class FolderAggFunc:
     def __init__(self, max_simple=5):
@@ -182,7 +189,7 @@ def main():
                             If we just specify --rows "A,B", then A and B will use all the values in the sweep_vars.
                         ''')
     parser.add_argument("--cols", type=str, default=None, help="Make latex table, specifying cols. The specification is similar to rows. For each (row, col) pair, the metric will be averaged to yield mean and std")
-    parser.add_argument("--latex_precision", type=int, default=2, help="Latex precision")
+    parser.add_argument("--precision", type=int, default=3, help="Precision used in display")
     parser.add_argument("--use_latex_agg", action="store_true")
     parser.add_argument("--save_grouped_table", action="store_true")
 
@@ -233,7 +240,18 @@ def main():
 
         print(f"Processing {logdir}")
         filename = prefix + ".pkl"
-        df = pickle.load(open(filename, "rb"))["df"]
+        data = pickle.load(open(filename, "rb"))
+
+        mdl = MultiRunUtil.load_check_module(data["meta"]["subfolders"][0])
+
+        default_metric_info = lambda x: dict(topk=args.topk, topk_mean=args.topk_mean, descending=args.descending)
+        if hasattr(mdl, "_attr_multirun") and "metric_info" in mdl._attr_multirun:
+            metric_info = mdl._attr_multirun["metric_info"]
+            print(f"Leveraging metric_info from py file..")
+        else:
+            metric_info = default_metric_info
+
+        df = data["df"]
 
         # keep those records that satisfy config_filter
         sel = df.apply(config_filter, axis=1, args=(config_strs,))
@@ -258,7 +276,7 @@ def main():
         for col in key_stats:
             sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
             data = df[sel]
-            print_top_n(col, data, args)
+            print_top_n(col, data, metric_info(col))
 
             d = df[col]
             entry = dict(
@@ -278,18 +296,15 @@ def main():
 
             for key_stat in key_stats:
                 print(f"Table for {key_stat}. Rows: {args.rows}, Cols: {args.cols}")
-                print(print_latex(df, row_names, row_choices, col_names, col_choices, key_stat, precision=args.latex_precision))
+                print(print_latex(df, row_names, row_choices, col_names, col_choices, key_stat, precision=args.precision))
 
         # Print out group means.
         if groups is not None:
             cols = [ col for col in key_stats ] + [ "_config_str", "folder" ]
 
             # Add aggregation function for each key_stats
-            if args.use_latex_agg:
-                agg_obj = LatexAggFunc(precision=args.latex_precision)
-                aggs = { col: [ agg_obj.agg ] for col in key_stats }
-            else:
-                aggs = { col: [ 'mean', 'std' ] for col in key_stats }
+            agg_obj = MeanStdAggFunc(precision=args.precision, use_latex=args.use_latex_agg)
+            aggs = { col: [ agg_obj.agg ] for col in key_stats }
 
             # Add folder aggregation. List all subfolder names for each breakdown category. 
             folder_agg_obj = FolderAggFunc()
@@ -298,17 +313,17 @@ def main():
             # convert _config_str to multiple columns, each is a hyper-parameter. 
             df = df[cols].apply(configstr2cols, axis="columns", args=(groups,))
             # Group according to the specified groups, and aggregated with aggration function. 
-            df = df.groupby(groups).agg(aggs)
-            print(df)
+            df_agg = df.groupby(groups).agg(aggs)
+            print(df_agg)
 
             if not args.use_latex_agg:
-                c = df[col]["mean"]
+                c = df.groupby(groups).agg({ col : 'mean' })[col]
                 print(f"max_val: {c.max()} at " + ",".join([f"{g}={v}" for g, v in zip(groups, c.idxmax())]))
                 print(f"min_val: {c.min()} at " + ",".join([f"{g}={v}" for g, v in zip(groups, c.idxmin())]))
 
             if args.save_grouped_table:
                 tbl_save = os.path.join(prefix, output_tbl_filename) 
-                pickle.dump(df, open(tbl_save, "wb"))
+                pickle.dump(df_agg, open(tbl_save, "wb"))
                 print(f"*** output table saved in {tbl_save}") 
 
         # json_filename = prefix + "_top.json" 

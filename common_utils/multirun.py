@@ -2,6 +2,7 @@ from subprocess import check_output
 from omegaconf import OmegaConf
 from datetime import timedelta
 from collections import defaultdict
+import importlib
 import time
 import yaml
 import re
@@ -41,6 +42,18 @@ def pretty_print_cmd(args):
 
 def pretty_print_args(args):
     return OmegaConf.to_yaml(args)
+
+def print_info(args):
+    return f'''
+Command line:
+    
+{pretty_print_cmd(sys.argv)}
+    
+Working dir: {os.getcwd()}
+{get_git_hash()}
+{get_git_diffs()}
+{pretty_print_args(args)}
+'''
     
 class MultiRunUtil:
     filename_cfg_matcher = re.compile("[^=]+=[^=_]+")
@@ -238,5 +251,19 @@ class MultiRunUtil:
 
         return entries
 
+    @classmethod
+    def load_check_module(cls, subfolder, filename=None):
+        if filename is None:
+            main_file = cls.get_main_file(subfolder)
+            main_file_checkresult = main_file + "_checkresult.py"
+            if not os.path.exists(main_file_checkresult):
+                main_file_checkresult = main_file + ".py"
+        else:
+            main_file_checkresult = filename
 
+        spec = importlib.util.spec_from_file_location("", main_file_checkresult)
+        mdl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mdl)
+
+        return mdl
     
