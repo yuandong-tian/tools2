@@ -84,7 +84,6 @@ def run_http_server(port):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--check_freq', type=int, default=60, help="check frequency (in sec)")
-parser.add_argument('--match_file', type=str, default=None)
 parser.add_argument('--key_stats', type=str, default="acc")
 parser.add_argument('--descending', action="store_true")
 parser.add_argument('--port', default=4999, type=int)
@@ -130,10 +129,10 @@ while True:
     for title, r in records.items():
         f.write(f"## {title}\n\n")
         try:
-            cmd = f"python {abs_path}/analyze.py --logdirs {r} --log_regexpr_json {args.match_file} --loader=log --num_process 1" 
+            cmd = f"python {abs_path}/analyze.py {r} --num_process 1" 
             print(cmd)
             check_output(cmd, shell=True)
-            cmd = f"python {abs_path}/stats.py --logdirs {r} --key_stats {args.key_stats} --topk_mean 1 --groups / "
+            cmd = f"python {abs_path}/stats.py {r} --key_stats {args.key_stats} --topk_mean 1 --groups / "
             if args.descending:
                 cmd += "--descending"
             print(cmd)

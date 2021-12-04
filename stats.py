@@ -133,11 +133,34 @@ class FolderAggFunc:
         self.max_simple = max_simple
 
     def agg(self, series):
-        return ",".join([ os.path.basename(f) for f in series ])
+        ss = sorted([ int(os.path.basename(f)) for f in series ])
+        if len(ss) == 0:
+            return "[0]"
+
+        # [6,7,8,10,12,13] -> 6-8,10,12-13
+        last_start = ss[0]
+        last_end = ss[0]
+        output = []
+        for s in ss[1:]:
+            if s > last_end + 1:
+                if last_end > last_start:
+                    output.append(f"{last_start}-{last_end}")
+                else:
+                    output.append(f"{last_start}")
+                last_start = last_end = s
+            else:
+                last_end = s 
+
+        if last_end > last_start:
+            output.append(f"{last_start}-{last_end}")
+        else:
+            output.append(f"{last_start}")
+
+        return ",".join(output) + f"[{series.size}]"
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--logdirs", type=str)
+    parser.add_argument("logdirs", type=str)
     parser.add_argument("--key_stats", type=str, default=None)
     parser.add_argument("--subkey", type=str, default=None, help="subkey needs to be specified if the time series is a list of dict")
     parser.add_argument("--descending", action="store_true")
