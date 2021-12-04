@@ -128,11 +128,11 @@ class MeanStdAggFunc:
     def agg(self, series):
         mean_val = series.mean()
         std_val = series.std()
-        sz = series.size
+        nona_cnt = series.count() 
         if self.use_latex:
             return fr"${mean_val:.{self.precision}f}\pm {std_val:.{self.precision}f}$"
         else:
-            return fr"{mean_val:.{self.precision}f} ± {std_val:.{self.precision}f}"
+            return f"{mean_val:.{self.precision}f} ± {std_val:.{self.precision}f} [{nona_cnt}]"
 
 
 class FolderAggFunc:
