@@ -19,12 +19,12 @@ from common_utils import MultiRunUtil
 
 pd.options.display.max_rows = 1000
 
-def print_top_n(col, df, params):
+def print_top_n(col, df, params_getter):
     num_rows = df.shape[0]
-    n = min(params["topk"], num_rows)
-    df_sorted = df.sort_values(by=[col], ascending=not params["descending"])
+    n = min(params_getter(col, "topk"), num_rows)
+    df_sorted = df.sort_values(by=[col], ascending=not params_getter(col, "descending"))
 
-    print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{params['topk_mean']} entries):")
+    print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{params_getter(col, 'topk_mean')} entries):")
     print(tabulate(df_sorted.head(n), headers='keys'))
 
 def print_col_infos(df):
@@ -199,11 +199,6 @@ def main():
 
     logdirs = utils.parse_logdirs(args.logdirs)
 
-    if args.key_stats is None:
-        key_stats = []
-    else:
-        key_stats = args.key_stats.split(",")
-
     if args.config is not None: 
         config_strs = config2dict(args.config)
     else:
@@ -212,7 +207,6 @@ def main():
     types_convert = get_type_spec(args.types)
     summary_dir = utils.get_checkpoint_summary_path()
 
-    key_stats_no_iters = key_stats
     if args.first_k_iter is not None:
         # They are used as suffix to key_stats
         iters = args.first_k_iter.split(",")
@@ -243,13 +237,20 @@ def main():
         data = pickle.load(open(filename, "rb"))
 
         mdl = MultiRunUtil.load_check_module(data["meta"]["subfolders"][0])
-
-        default_metric_info = lambda x: dict(topk=args.topk, topk_mean=args.topk_mean, descending=args.descending)
-        if hasattr(mdl, "_attr_multirun") and "metric_info" in mdl._attr_multirun:
-            metric_info = mdl._attr_multirun["metric_info"]
-            print(f"Leveraging metric_info from py file..")
+        if args.key_stats is None and hasattr(mdl, "_attr_multirun") and "metrics" in mdl._attr_multirun: 
+            metrics = mdl._attr_multirun["metrics"]
+            key_stats = list(metrics.keys())
         else:
-            metric_info = default_metric_info
+            key_stats = args.key_stats.split(",")
+
+        def get_metric_info(metric, param_name):
+            if hasattr(mdl, "_attr_multirun"):
+                params = mdl._attr_multirun.get("common_options", {})
+                # Overwrite common keys. 
+                params.update(mdl._attr_multirun["metrics"][metric])
+                return params.get(param_name, getattr(args, param_name))
+            else:
+                return getattr(args, param_name) 
 
         df = data["df"]
 
@@ -261,7 +262,7 @@ def main():
             continue
 
         # Process the records. 
-        df = df.apply(process_func, axis=1, args=(key_stats_no_iters, args))
+        df = df.apply(process_func, axis=1, args=(key_stats, get_metric_info))
 
         # Convert types
         df = df.astype(types_convert)
@@ -276,7 +277,7 @@ def main():
         for col in key_stats:
             sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
             data = df[sel]
-            print_top_n(col, data, metric_info(col))
+            print_top_n(col, data, get_metric_info)
 
             d = df[col]
             entry = dict(

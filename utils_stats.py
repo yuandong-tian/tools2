@@ -37,7 +37,7 @@ def configstr2cols(row, groups):
 def combine_key_iter(col, i):
     return f"{col}_iter{i}"
 
-def process_func(row, cols, args):
+def process_func(row, cols, params_per_col):
     if cols is None:
         return row
 
@@ -45,12 +45,17 @@ def process_func(row, cols, args):
     config = config2dict(row["_config_str"])
     row["_config_str"] = ",".join([f"{k}={v}" for k, v in config.items() if not k in ('githash', 'sweep_filename')])
 
-    if args.first_k_iter is not None:
-        iters = args.first_k_iter.split(",")
-    else:
-        iters = None
-
     for col in cols:
+        first_k_iter = params_per_col(col, "first_k_iter")
+        descending = params_per_col(col, "descending")
+        subkey = params_per_col(col, "subkey")
+        topk_mean = params_per_col(col, "topk_mean")
+
+        if first_k_iter is not None:
+            iters = first_k_iter.split(",")
+        else:
+            iters = None
+
         # Deal with multiple iterations.  
         if iters is not None:
             #import pdb
@@ -67,22 +72,22 @@ def process_func(row, cols, args):
 
             if len(data) > 0:
                 if isinstance(data[0], dict):
-                    assert args.subkey is not None, "With list of dict as data, a subkey is needed!"
+                    assert subkey is not None, "With list of dict as data, a subkey is needed!"
                     # Use subkey
-                    data = [ d[args.subkey] for d in data ]
+                    data = [ d[subkey] for d in data ]
                 data = np.array(data) 
                 inds = data.argsort()
-                if args.descending:
+                if descending:
                     inds = inds[::-1]
                 data = data[inds]
 
                 best = data[0]
                 best_idx = inds[0]
 
-                if len(data) < args.topk_mean:
+                if len(data) < topk_mean:
                     topk_mean = sum(data) / len(data)
                 else:
-                    topk_mean = sum(data[:args.topk_mean]) / args.topk_mean
+                    topk_mean = sum(data[:topk_mean]) / topk_mean
             else:
                 best = None
                 best_idx = None
