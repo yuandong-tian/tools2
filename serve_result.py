@@ -84,8 +84,6 @@ def run_http_server(port):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--check_freq', type=int, default=60, help="check frequency (in sec)")
-parser.add_argument('--key_stats', type=str, default="acc")
-parser.add_argument('--descending', action="store_true")
 parser.add_argument('--port', default=4999, type=int)
 
 args = parser.parse_args()
@@ -132,9 +130,7 @@ while True:
             cmd = f"python {abs_path}/analyze.py {r} --num_process 1" 
             print(cmd)
             check_output(cmd, shell=True)
-            cmd = f"python {abs_path}/stats.py {r} --key_stats {args.key_stats} --topk_mean 1 --groups / "
-            if args.descending:
-                cmd += "--descending"
+            cmd = f"python {abs_path}/stats.py {r} --groups / "
             print(cmd)
             output = check_output(cmd, shell=True).decode('utf-8')
             f.write(f"```\n{output}\n```\n\n")

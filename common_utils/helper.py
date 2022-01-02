@@ -150,3 +150,9 @@ def count_output_size(input_shape, model):
     fake_input = torch.FloatTensor(*input_shape)
     output_size = model.forward(fake_input).view(-1).size()[0]
     return output_size
+
+def eig_sorted(A):
+    eigvalues, eigenvectors = torch.eig(A, eigenvectors=True)
+    sorted_values, sorted_indices = eigvalues[:,0].sort(descending=True)
+    eigenvectors = eigenvectors[:, sorted_indices]
+    return eigvalues[sorted_indices, :], eigenvectors

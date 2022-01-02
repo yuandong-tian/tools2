@@ -108,7 +108,7 @@ class MultiRunUtil:
     @classmethod
     def get_log_file(cls, subfolder, load_submitit_log=False):
         if os.path.isdir(subfolder):
-            if load_submitit_log:
+            if not load_submitit_log:
                 all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
             else:
                 parent_folder = os.path.dirname(subfolder)
