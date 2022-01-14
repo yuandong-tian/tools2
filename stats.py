@@ -18,6 +18,8 @@ from utils_stats import *
 from common_utils import MultiRunUtil
 
 pd.options.display.max_rows = 1000
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 1000)
 
 def print_top_n(col, df, params_getter):
     num_rows = df.shape[0]
@@ -190,6 +192,7 @@ def main():
                         ''')
     parser.add_argument("--cols", type=str, default=None, help="Make latex table, specifying cols. The specification is similar to rows. For each (row, col) pair, the metric will be averaged to yield mean and std")
     parser.add_argument("--precision", type=int, default=3, help="Precision used in display")
+    parser.add_argument("--print_top_n", action="store_true")
     parser.add_argument("--use_latex_agg", action="store_true")
     parser.add_argument("--save_grouped_table", action="store_true")
 
@@ -204,14 +207,7 @@ def main():
     else:
         config_strs = None
 
-    types_convert = get_type_spec(args.types)
     summary_dir = utils.get_checkpoint_summary_path()
-
-    if args.first_k_iter is not None:
-        # They are used as suffix to key_stats
-        iters = args.first_k_iter.split(",")
-        key_stats = [ combine_key_iter(col, i) for col in key_stats for i in iters ] 
-        types_convert = { combine_key_iter(col, i) : t for col, t in types_convert.items() for i in iters }
 
     res = []
     sig = signature() 
@@ -262,7 +258,14 @@ def main():
             continue
 
         # Process the records. 
-        df = df.apply(process_func, axis=1, args=(key_stats, get_metric_info))
+        df = df.apply(process_func, axis=1, args=(key_stats, get_metric_info, args.first_k_iter))
+
+        types_convert = get_type_spec(args.types)
+        if args.first_k_iter is not None:
+            # They are used as suffix to key_stats
+            iters = args.first_k_iter.split(",")
+            key_stats = [ combine_key_iter(col, i) for col in key_stats for i in iters ] 
+            types_convert = { combine_key_iter(col, i) : t for col, t in types_convert.items() for i in iters }
 
         # Convert types
         df = df.astype(types_convert)
@@ -277,7 +280,8 @@ def main():
         for col in key_stats:
             sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
             data = df[sel]
-            print_top_n(col, data, get_metric_info)
+            if args.print_top_n:
+                print_top_n(col, data, get_metric_info)
 
             d = df[col]
             entry = dict(
@@ -301,11 +305,13 @@ def main():
 
         # Print out group means.
         if groups is not None:
-            cols = [ col for col in key_stats ] + [ "_config_str", "folder" ]
+            cols = [ col for col in key_stats ] + [ col + "_len" for col in key_stats ] + [ "_config_str", "folder" ]
 
             # Add aggregation function for each key_stats
             agg_obj = MeanStdAggFunc(precision=args.precision, use_latex=args.use_latex_agg)
+
             aggs = { col: [ agg_obj.agg ] for col in key_stats }
+            aggs.update({ col + "_len": [ agg_obj.agg ] for col in key_stats })
 
             # Add folder aggregation. List all subfolder names for each breakdown category. 
             folder_agg_obj = FolderAggFunc()

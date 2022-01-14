@@ -37,7 +37,7 @@ def configstr2cols(row, groups):
 def combine_key_iter(col, i):
     return f"{col}_iter{i}"
 
-def process_func(row, cols, params_per_col):
+def process_func(row, cols, params_per_col, first_k_iter):
     if cols is None:
         return row
 
@@ -45,16 +45,15 @@ def process_func(row, cols, params_per_col):
     config = config2dict(row["_config_str"])
     row["_config_str"] = ",".join([f"{k}={v}" for k, v in config.items() if not k in ('githash', 'sweep_filename')])
 
+    if first_k_iter is not None:
+        iters = first_k_iter.split(",")
+    else:
+        iters = None
+
     for col in cols:
-        first_k_iter = params_per_col(col, "first_k_iter")
         descending = params_per_col(col, "descending")
         subkey = params_per_col(col, "subkey")
         topk_mean = params_per_col(col, "topk_mean")
-
-        if first_k_iter is not None:
-            iters = first_k_iter.split(",")
-        else:
-            iters = None
 
         # Deal with multiple iterations.  
         if iters is not None:
@@ -85,15 +84,15 @@ def process_func(row, cols, params_per_col):
                 best_idx = inds[0]
 
                 if len(data) < topk_mean:
-                    topk_mean = sum(data) / len(data)
+                    topk_mean_value = sum(data) / len(data)
                 else:
-                    topk_mean = sum(data[:topk_mean]) / topk_mean
+                    topk_mean_value = sum(data[:topk_mean]) / topk_mean
             else:
                 best = None
                 best_idx = None
-                topk_mean = None
+                topk_mean_value = None
 
-            row[col_name] = topk_mean
+            row[col_name] = topk_mean_value
             row[f"{col_name}_best"] = best
             row[f"{col_name}_best_idx"] = best_idx
             row[f"{col_name}_len"] = len(data)

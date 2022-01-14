@@ -9,6 +9,7 @@ import re
 import glob
 import os
 import sys
+from copy import deepcopy
 
 def get_git_hash():
     try:
@@ -43,8 +44,11 @@ def pretty_print_cmd(args):
 def pretty_print_args(args):
     return OmegaConf.to_yaml(args)
 
+gJobStartLine = "===*** Job start ***==="
+
 def print_info(args):
     return f'''
+{gJobStartLine}
 Command line:
     
 {pretty_print_cmd(sys.argv)}
@@ -134,11 +138,31 @@ class MultiRunUtil:
 
     @classmethod
     def load_regex(cls, subfolder, regex_list, load_submitit_log=False):
-        entry, log_file = cls.get_log_file(subfolder, load_submitit_log=load_submitit_log)
+        init_entry, log_file = cls.get_log_file(subfolder, load_submitit_log=load_submitit_log)
 
-        has_one = False
+        entry = deepcopy(init_entry)
+        entry_len = 0
+        entries = []
+
+        def detect_job_preempt(line):
+            if line.find(gJobStartLine):
+                return True
+
+            if line.find("[submitit][WARNING]") >= 0:
+                return line.find("SIGTERM") >= 0 or line.find("SIGUSR1") >= 0 or line.find("SIGCONT") >= 0:
+            else:
+                return False
+
+        # hack = os.path.basename(subfolder) in ["40", "41", "42", "43", "44"]
         with open(log_file, "r") as f:
             for line in f:
+                # if things are preempted, restart the record and keep only the longest one.
+                if detect_job_preempt(line) and entry_len > 0:
+                    entries.append((entry, entry_len))
+                    entry = deepcopy(init_entry)
+                    entry_len = 0
+                    continue
+                
                 for d in regex_list:
                     m = d["match"].search(line)
                     if not m:
@@ -146,9 +170,12 @@ class MultiRunUtil:
 
                     for key_act, val_act in d["action"]:
                         entry[key_act].append(eval(val_act))
-                    has_one = True
+                    entry_len += 1
 
-        if has_one:
+        entries.append((entry, entry_len))
+        # find the longest record
+        best_entry, best_len = sorted(entries, key=lambda x: x[1])[-1]
+        if best_len >= 1:
             return [ dict(entry) ]
         else:
             return None
