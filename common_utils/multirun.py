@@ -149,7 +149,7 @@ class MultiRunUtil:
                 return True
 
             if line.find("[submitit][WARNING]") >= 0:
-                return line.find("SIGTERM") >= 0 or line.find("SIGUSR1") >= 0 or line.find("SIGCONT") >= 0:
+                return line.find("SIGTERM") >= 0 or line.find("SIGUSR1") >= 0 or line.find("SIGCONT") >= 0
             else:
                 return False
 
