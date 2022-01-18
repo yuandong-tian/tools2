@@ -127,7 +127,7 @@ while True:
     for title, r in records.items():
         f.write(f"## {title}\n\n")
         try:
-            cmd = f"python {abs_path}/analyze.py {r} --num_process 16" 
+            cmd = f"python {abs_path}/analyze.py {r} --num_process 4" 
             print(cmd)
             check_output(cmd, shell=True)
             cmd = f"python {abs_path}/stats.py {r} --groups / "

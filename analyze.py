@@ -131,7 +131,8 @@ class LogProcessor:
             
         entry = dict()
         for key, func in check_result_funcs.items():
-            entry.update(func(subfolder))
+            if args.result_group == "*" or key in args.result_group.split(","):
+                entry.update(func(subfolder))
 
         if entry is None:
             return None
@@ -150,10 +151,10 @@ def main():
     parser.add_argument("logdirs", type=str)
     parser.add_argument("--num_process", type=int, default=1)
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
-    parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
     parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
     parser.add_argument("--module_checkresult", type=str, default=None, help="Specify the module .py file that contains _attr_multirun used to summarize the results.")
+    parser.add_argument("--result_group", type=str, default="default", help="group of results to check, separated by comma, or just * (meaning all)")
 
     args = parser.parse_args()
 
@@ -161,15 +162,6 @@ def main():
         os.mkdir(args.output_dir)
 
     log_processor = LogProcessor()
-
-    logdirs = []
-    if args.update_all:
-        for summary_file in glob.glob(os.path.join(args.output_dir, "*")):
-            print(f"Collecting {summary_file} for updating")
-            basename = os.path.basename(summary_file)
-            basename = os.path.splitext(basename)[0]
-            logdirs.append(basename.replace("_", "/"))
-    
     logdirs = utils.parse_logdirs(args.logdirs)
 
     s = ""
