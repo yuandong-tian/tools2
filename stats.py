@@ -233,9 +233,8 @@ def main():
         data = pickle.load(open(filename, "rb"))
 
         mdl = MultiRunUtil.load_check_module(data["meta"]["subfolders"][0])
-        if args.key_stats is None and hasattr(mdl, "_attr_multirun") and "metrics" in mdl._attr_multirun: 
-            metrics = mdl._attr_multirun["metrics"]
-            key_stats = list(metrics.keys())
+        if args.key_stats is None and hasattr(mdl, "_attr_multirun") and "default_metrics" in mdl._attr_multirun: 
+            key_stats = mdl._attr_multirun["default_metrics"]
         else:
             key_stats = args.key_stats.split(",")
 
@@ -243,7 +242,7 @@ def main():
             if hasattr(mdl, "_attr_multirun"):
                 params = mdl._attr_multirun.get("common_options", {})
                 # Overwrite common keys. 
-                params.update(mdl._attr_multirun["metrics"][metric])
+                params.update(mdl._attr_multirun["specific_options"].get(metric, {}))
                 return params.get(param_name, getattr(args, param_name))
             else:
                 return getattr(args, param_name) 
@@ -274,11 +273,15 @@ def main():
         cond_vars, sweep_vars = print_col_infos(df)
         groups = get_group_spec(args.groups, sweep_vars)
 
-        if "modified_since" in df:
+        has_modified_since = "modified_since" in df 
+
+        if has_modified_since:
             print("Recent modified since: ", df["modified_since"].min())
 
         for col in key_stats:
-            sel = [col, "folder", "modified_since", "_config_str", f"{col}_best_idx", f"{col}_len"]
+            sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]
+            if has_modified_since:
+                sel.append("modified_since")
             data = df[sel]
             if args.print_top_n:
                 print_top_n(col, data, get_metric_info)

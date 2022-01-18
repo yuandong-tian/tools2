@@ -130,7 +130,6 @@ class MultiRunUtil:
         td = timedelta(seconds=sec_diff)
 
         entry = defaultdict(list)
-        entry["folder"] = subfolder
         entry["modified_since"] = str(td)
 
         return entry, log_file
@@ -145,7 +144,7 @@ class MultiRunUtil:
         entries = []
 
         def detect_job_preempt(line):
-            if line.find(gJobStartLine):
+            if line.find(gJobStartLine) >= 0:
                 return True
 
             if line.find("[submitit][WARNING]") >= 0:
@@ -176,7 +175,7 @@ class MultiRunUtil:
         # find the longest record
         best_entry, best_len = sorted(entries, key=lambda x: x[1])[-1]
         if best_len >= 1:
-            return [ dict(entry) ]
+            return dict(entry)
         else:
             return None
 
@@ -200,7 +199,7 @@ class MultiRunUtil:
                 cnt += 1
 
         if cnt > 0:
-            return [ dict(entry) ]
+            return dict(entry)
         else:
             return None
 
@@ -240,43 +239,7 @@ class MultiRunUtil:
 
         # Format: 
         # List[Dict[str, List[value]]]: number of trials * (key, a list of values)
-        return [entry]
-
-    @classmethod
-    def load_checkpoint(cls, subfolder, summary="summary.pth"):
-        # [TODO] Hardcoded path.
-        # sys.path.append("/private/home/yuandong/forked/luckmatters/catalyst")
-        summary_file = os.path.join(subfolder, summary)
-
-        stats = None
-        for i in range(10):
-            try:
-                if os.path.exists(summary_file):
-                    stats = torch.load(summary_file)
-                    if hasattr(stats, "stats"):
-                        stats = stats.stats
-                break
-            except Exception as e:
-                time.sleep(2)
-
-        if stats is None:
-            # print(subfolder)
-            # print(e)
-            return None
-
-        if not isinstance(stats, dict):
-            stats = [stats]
-        else:
-            stats = stats.values()
-
-        entries = []
-        for one_stat in stats:
-            if one_stat is not None:
-                entry = dict(folder=subfolder)
-                entry.update(listDict2DictList(one_stat))
-                entries.append(to_cpu(entry))
-
-        return entries
+        return entry
 
     @classmethod
     def load_check_module(cls, subfolder, filename=None):

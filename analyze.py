@@ -83,7 +83,9 @@ def listDict2DictList(stats):
 def load_customized_processing(subfolder, args):
     mdl = MultiRunUtil.load_check_module(subfolder, filename=args.module_checkresult)
     default_attr_multirun = {
-        "check_result": MultiRunUtil.load_inline_json 
+        "check_result": {
+            "performance": MultiRunUtil.load_inline_json 
+        }
     }
 
     attr_multirun = getattr(mdl, "_attr_multirun", default_attr_multirun)
@@ -105,7 +107,9 @@ class LogProcessor:
     def load_one(self, params):
         subfolder = params["subfolder"]
         args = params["args"]
-        check_result_func = params["check_result_func"]
+        check_result_funcs = params.get("check_result_funcs", None)
+        if check_result_funcs is None:
+            check_result_funcs = load_customized_processing(subfolder, args)
 
         overrides = MultiRunUtil.load_cfg(subfolder)
         if len(overrides) == 0:
@@ -124,19 +128,22 @@ class LogProcessor:
                 for line in open(sweep_filename, "r"):
                     first_group["command"] = line.strip()
                     break
+            
+        entry = dict()
+        for key, func in check_result_funcs.items():
+            entry.update(func(subfolder))
 
-        entries = check_result_func(subfolder)
-
-        if entries is None:
+        if entry is None:
             return None
 
-        for entry in entries:
-            entry.update(config)
+        entry.update(config)
+        if "folder" not in entry:
+            entry["folder"] = subfolder 
 
         if first_group is not None:
-            entries[0]["_first"] = first_group
+            entry["_first"] = first_group
 
-        return entries
+        return entry
 
 def main():
     parser = argparse.ArgumentParser()
@@ -182,27 +189,39 @@ def main():
         if len(subfolders) == 0:
             continue
 
-        check_result_func = load_customized_processing(subfolders[0], args)
-
         # test = log_processor.load_one(dict(subfolder=subfolders[0], args=args, first=True))
         res = []
         if args.num_process == 1:
+            check_result_funcs = load_customized_processing(subfolders[0], args)
             # Do not use multi-processing.
             for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
-                entry = log_processor.load_one(dict(subfolder=subfolder, check_result_func=check_result_func, args=args, first= (i == 0)))
+                arguments = dict(
+                    subfolder=subfolder, 
+                    check_result_funcs=check_result_funcs, 
+                    args=args, 
+                    first= (i == 0)
+                ) 
+
+                entry = log_processor.load_one(arguments)
                 if entry is not None:
-                    res += entry
+                    res.append(entry)
         else:
             pool = mp.Pool(args.num_process)
             try:
                 num_folders = len(subfolders)
                 chunksize = (num_folders + args.num_process - 1) // args.num_process
                 print(f"Chunksize: {chunksize}")
-                arguments = [ dict(subfolder=subfolder, args=args, first= (i == 0)) for i, subfolder in enumerate(subfolders) ]
+                arguments = [ 
+                    dict(
+                        subfolder=subfolder, 
+                        args=args, 
+                        first= (i == 0)
+                    ) for i, subfolder in enumerate(subfolders) 
+                ]
                 results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
-                        res += entry
+                        res.append(entry)
 
             except Exception as e:
                 print(e)
