@@ -57,8 +57,9 @@ def process_func(row, cols, params_per_col, first_k_iter):
 
         # Deal with multiple iterations.  
         if iters is not None:
-            #import pdb
-            #pdb.set_trace()
+            #if not isinstance(row[col], list):
+            #    import pdb
+            #    pdb.set_trace()
             all_data = [ row[col][:int(first_k_iter)] for first_k_iter in iters ]
             all_col_names = [ combine_key_iter(col, i) for i in iters ]
         else:

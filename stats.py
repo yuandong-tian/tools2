@@ -276,7 +276,7 @@ def main():
         has_modified_since = "modified_since" in df 
 
         if has_modified_since:
-            print("Recent modified since: ", df["modified_since"].min())
+            print("Recent modified since: ", df["modified_since"].dropna().min())
 
         for col in key_stats:
             sel = [col, "folder", "_config_str", f"{col}_best_idx", f"{col}_len"]

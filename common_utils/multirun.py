@@ -152,7 +152,7 @@ class MultiRunUtil:
             else:
                 return False
 
-        # hack = os.path.basename(subfolder) in ["40", "41", "42", "43", "44"]
+        # hack = os.path.basename(subfolder) in ["74"]
         with open(log_file, "r") as f:
             for line in f:
                 # if things are preempted, restart the record and keep only the longest one.
@@ -175,7 +175,7 @@ class MultiRunUtil:
         # find the longest record
         best_entry, best_len = sorted(entries, key=lambda x: x[1])[-1]
         if best_len >= 1:
-            return dict(entry)
+            return best_entry
         else:
             return None
 

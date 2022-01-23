@@ -132,9 +132,12 @@ class LogProcessor:
         entry = dict()
         for key, func in check_result_funcs.items():
             if args.result_group == "*" or key in args.result_group.split(","):
-                entry.update(func(subfolder))
+                try:
+                    entry.update(func(subfolder))
+                except:
+                    pass
 
-        if entry is None:
+        if entry is None or len(entry) == 0:
             return None
 
         entry.update(config)
