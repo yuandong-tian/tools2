@@ -16,7 +16,16 @@ def set_panda():
 def config2dict(s):
     return { item.split("=")[0]: item.split("=")[1] for item in s.split(",") } 
 
-def config_filter(row, config_strs):
+def config_filter(row, config_strs, iter_thres):
+    for col, min_iter in iter_thres.items():
+        if col in row:
+            data = row[col]
+            if isinstance(data, (float,int)):
+                data = [data]
+            if len(data) < min_iter:
+               # This row is not processed. 
+               return False
+
     if config_strs is None:
         return True
 

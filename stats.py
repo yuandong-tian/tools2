@@ -195,6 +195,7 @@ def main():
     parser.add_argument("--print_top_n", action="store_true")
     parser.add_argument("--use_latex_agg", action="store_true")
     parser.add_argument("--save_grouped_table", action="store_true")
+    parser.add_argument("--iter_thres", type=str, default="", help="specifying 'iter_thres acc=300' means that a record will be included if its acc entry has more than 300 entries.")
 
     command_line = " ".join(sys.argv)
 
@@ -214,6 +215,11 @@ def main():
     filename = "stats_" + sig + ".txt"
     output_tbl_filename = "tbl_" + sig + ".pkl"
     default_stdout = sys.stdout 
+
+    if args.iter_thres != "":
+        iter_thres = { item.split("=")[0] : int(item.split("=")[1]) for item in args.iter_thres.split(",") }
+    else:
+        iter_thres = {}
     
     for logdir in logdirs:
         logdir = utils.preprocess_logdir(logdir)
@@ -250,7 +256,7 @@ def main():
         df = data["df"]
 
         # keep those records that satisfy config_filter
-        sel = df.apply(config_filter, axis=1, args=(config_strs,))
+        sel = df.apply(config_filter, axis=1, args=(config_strs,iter_thres))
         df = df[sel]
         if df.shape[0] == 0:
             print("No selection!")
