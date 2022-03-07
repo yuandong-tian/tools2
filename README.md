@@ -58,3 +58,22 @@ Then prepare a task list (called `tasks.txt`) and run
 ```
 RAY_ADDRESS="auto" python [your path to tools2]/distribute_ray.py tasks.txt
 ```
+
+# Installation of `common_utils` package
+Just run install 
+```
+pip install .
+```
+After that you can use the package (together with `hydra`)
+```python
+import common_utils
+import hydra
+import logging
+log = logging.getLogger() 
+
+@hydra.main(config_path="config", config_name="config.yaml")
+def main(args):
+    log.info(common_utils.print_info(args))
+    common_utils.set_all_seeds(args.seed)
+    log.info(common_utils.pretty_print_args(args))
+```
