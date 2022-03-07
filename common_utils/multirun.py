@@ -67,7 +67,13 @@ class MultiRunUtil:
         config = yaml.safe_load(open(os.path.join(subfolder, ".hydra/hydra.yaml"), "r"))
         filename = config["hydra"]["job"]["name"] 
         path = config["hydra"]["runtime"]["cwd"]
-        return os.path.join(path, filename)
+        full_path = os.path.join(path, filename)
+        if not os.path.exists(full_path + ".py"):
+            # second choice, check os.getcwd()
+            curr_path = os.getcwd()
+            full_path = os.path.join(curr_path, filename)
+            assert os.path.exists(full_path + ".py"), f"{filename} cannot be found in either {path} or {curr_path}"
+        return full_path 
 
     @classmethod
     def load_full_cfg(cls, subfolder):

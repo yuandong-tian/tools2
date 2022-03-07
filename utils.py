@@ -4,7 +4,7 @@ from datetime import datetime
 import yaml
 import re
 
-config = yaml.load(open(os.path.expanduser("~/.tools2.yaml")))
+config = yaml.safe_load(open(os.path.expanduser("~/.tools2.yaml")))
 output_dir_matcher = re.compile(r"Sweep output dir\s*:\s*(.*)$")
 
 def get_checkpoint_output_path():

@@ -29,7 +29,7 @@ class ValueStats:
             assert False
         return self.summation / self.counter
 
-    def summary(self, info=None):
+    def summary(self, multiplier=1, info=None):
         info = "" if info is None else info
         name = "" if self.name is None else self.name
         if self.counter > 0:
@@ -37,16 +37,18 @@ class ValueStats:
             meanSqr = self.sumSqr / self.counter
             std = math.sqrt(meanSqr - mean * mean + 1e-6)
 
+            prefix = f"{info}{name}[{self.counter}]"
+            if multiplier != 1:
+                prefix += f"[*{multiplier}]"
+
             # try:
-            return "%s%s[%4d]: avg: %8.4f (± %8.4f), min: %8.4f[%4d], max: %8.4f[%4d]" % (
-                info,
-                name,
-                self.counter,
-                mean,
-                std / math.sqrt(self.counter), # std for the mean
-                self.min_value,
+            return "%s: avg: %8.4f (± %8.4f), min: %8.4f[%4d], max: %8.4f[%4d]" % (
+                prefix,
+                mean * multiplier,
+                std / math.sqrt(self.counter) * multiplier, # std for the mean
+                self.min_value * multiplier,
                 self.min_idx,
-                self.max_value,
+                self.max_value * multiplier,
                 self.max_idx,
             )
             # except BaseException:
@@ -58,14 +60,14 @@ class ValueStats:
         self.counter = 0
         self.summation = 0.0
         self.sumSqr = 0.0
-        self.max_value = -1e38
-        self.min_value = 1e38
+        self.max_value = float("-inf")
+        self.min_value = float("inf")
         self.max_idx = None
         self.min_idx = None
 
 
 class MultiCounter:
-    def __init__(self, root, verbose=False):
+    def __init__(self, root=None, verbose=False):
         # TODO: rethink counters
         self.last_time = None
         self.verbose = verbose
@@ -106,7 +108,7 @@ class MultiCounter:
     def time_elapsed(self):
         return (datetime.now() - self.last_time).total_seconds()
 
-    def summary(self, global_counter):
+    def summary(self, global_counter, multipliers={}):
         assert self.last_time is not None
         time_elapsed = (datetime.now() - self.last_time).total_seconds()
         s = "[%d] Time spent = %.2f s\n" % (global_counter, time_elapsed)
@@ -117,7 +119,7 @@ class MultiCounter:
         for k in sorted(self.stats.keys()):
             v = self.stats[k]
             info = str(global_counter) + ":" + k
-            s += v.summary(info=info.ljust(self.max_key_len + 4)) + "\n"
+            s += v.summary(info=info.ljust(self.max_key_len + 4), multiplier=multipliers.get(k, 1)) + "\n"
 
             if self.tb_writer is not None:
                 self.tb_writer.add_scalar(k, v.mean(), global_counter)
