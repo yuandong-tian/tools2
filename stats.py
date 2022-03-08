@@ -253,6 +253,15 @@ def main():
             else:
                 return getattr(args, param_name) 
 
+        def reorder_group(groups):
+            if hasattr(mdl, "_attr_multirun") and "default_group_order" in mdl._attr_multirun: 
+                default_order = mdl._attr_multirun["default_group_order"]
+                default_order_in_groups = [ a for a in default_order if a in groups ]
+                remaining = [ a for a in groups if a not in default_order ] 
+                return default_order_in_groups + remaining
+            else:
+                return groups
+            
         df = data["df"]
 
         # keep those records that satisfy config_filter
@@ -278,6 +287,8 @@ def main():
         # Print information in each column 
         cond_vars, sweep_vars = print_col_infos(df)
         groups = get_group_spec(args.groups, sweep_vars)
+        if args.groups == "/":
+            groups = reorder_group(groups)
 
         has_modified_since = "modified_since" in df 
 
