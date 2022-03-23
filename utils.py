@@ -4,7 +4,7 @@ from datetime import datetime
 import yaml
 import re
 
-config = yaml.load(open(os.path.expanduser("~/.tools2.yaml")))
+config = yaml.safe_load(open(os.path.expanduser("~/.tools2.yaml")))
 output_dir_matcher = re.compile(r"Sweep output dir\s*:\s*(.*)$")
 
 def get_checkpoint_output_path():
@@ -28,11 +28,36 @@ def parse_logdirs(logdirs):
                 if m:
                     d = m.group(1)
                     break
-        if d.startswith(checkpoint_output_path):
-            d = d[len(checkpoint_output_path) + 1:]
-        res.append(d)
+
+        # If d is absolute path, keep it. 
+        # If d is relative, check whether it is present in the current folder, 
+        #    if so, keep, otherwise connect with the checkpoint_output_path
+        if d[0] != '/':
+            for candidate_root in [checkpoint_output_path, os.getcwd()]:
+                full_path = os.path.join(candidate_root, d)
+                if os.path.exists(full_path):
+                    res.append(full_path)
+                    break
+        else:
+            res.append(d)
 
     return res
+
+def preprocess_logdir(logdir):
+    if not os.path.isdir(logdir):
+        # Grab a line with "sweep output folder" and match it 
+        subfolder_matcher = re.compile(r"sweep output dir : (.*)$")
+        real_folder = None
+        for line in open(logdir, "r"):
+            m = subfolder_matcher.search(line)
+            if m:
+                real_folder = m.group(1)
+                break
+        assert real_folder is not None, f"{logdir} as a file, should contain real folder but it cannot be found!" 
+        logdir = real_folder
+        print(f"Redirect to {logdir}")
+    return logdir
+
 
 def signature():
     return str(datetime.now()).replace(" ", "_").replace(":", "-").replace(".", "_")

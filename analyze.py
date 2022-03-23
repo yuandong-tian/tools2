@@ -1,5 +1,6 @@
 from tensorboard.backend.event_processing import event_accumulator
 from collections import defaultdict
+from datetime import timedelta
 import re
 import time
 import os
@@ -14,8 +15,9 @@ import tqdm
 import pickle
 import argparse
 import utils
+import importlib.util
 
-filename_cfg_matcher = re.compile("[^=]+=[^=_]+")
+from common_utils import MultiRunUtil
 
 def to_cpu(x):
     if isinstance(x, dict):
@@ -76,182 +78,40 @@ def listDict2DictList(stats):
                     v.append(None)
     return entry
 
+
+# Load customized processing. 
+def load_customized_processing(subfolder, args):
+    mdl = MultiRunUtil.load_check_module(subfolder, filename=args.module_checkresult)
+    default_attr_multirun = {
+        "check_result": {
+            "performance": MultiRunUtil.load_inline_json 
+        }
+    }
+
+    attr_multirun = getattr(mdl, "_attr_multirun", default_attr_multirun)
+    # Check attr_multirun
+    return attr_multirun["check_result"]
+
+    # we import all names that don't begin with _ and main
+    # names = [x for x in mdl.__dict__ if not x.startswith("_") and not x == "main"]
+
+    # now drag them in
+    # globals().update({k: getattr(mdl, k) for k in names})
+    # return mdl._check_result(subfolder, args)
+
+
 class LogProcessor:
     def __init__(self):
         pass
-
-    def _load_tensorboard(self, subfolder, args):
-        event_files = [ glob.glob(os.path.join(subfolder, args.tb_folder, "stat.tb/*")) ]
-        if args.tb_choice == "largest":
-            # Use the largest event_file.
-            files = [ (os.path.getsize(event_file), event_file) for event_file in event_files ] 
-            files = sorted(files, key=lambda x: -x[0])[:1]
-        elif args.tb_choice == "earliest":
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
-            files = sorted(files, key=lambda x: x[0])[:1]
-        elif args.tb_choice == "latest":
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
-            files = sorted(files, key=lambda x: -x[0])[:1]
-        elif args.tb_choice == "all":
-            # All files, earliest first
-            files = [ (os.path.getmtime(event_file), event_file) for event_file in event_files ]
-            files = sorted(files, key=lambda x: x[0])
-        else:
-            raise RuntimeError(f"Unknown tb_choice: {args.tb_choice}")
-
-        if len(files) == 0:
-            return None
-
-        entry = dict(folder=subfolder)
-        for _, event_file in files:
-            ea = event_accumulator.EventAccumulator(event_file)
-            ea.Reload()
-
-            for key_name in ea.Tags()["scalars"]:
-                l = [ s.value for s in ea.Scalars(key_name) ]
-                if key_name not in entry: 
-                    entry[key_name] = []
-                entry[key_name] += l
-
-        # Format: 
-        # List[Dict[str, List[value]]]: number of trials * (key, a list of values)
-        return [entry]
-
-    def _load_checkpoint(self, subfolder, args):
-        # [TODO] Hardcoded path.
-        # sys.path.append("/private/home/yuandong/forked/luckmatters/catalyst")
-        summary_file = os.path.join(subfolder, args.summary_file)
-
-        stats = None
-        for i in range(10):
-            try:
-                if os.path.exists(summary_file):
-                    stats = torch.load(summary_file)
-                    if hasattr(stats, "stats"):
-                        stats = stats.stats
-                break
-            except Exception as e:
-                time.sleep(2)
-
-        if stats is None:
-            # print(subfolder)
-            # print(e)
-            return None
-
-        if not isinstance(stats, dict):
-            stats = [stats]
-        else:
-            stats = stats.values()
-
-        entries = []
-        for one_stat in stats:
-            if one_stat is not None:
-                entry = dict(folder=subfolder)
-                entry.update(listDict2DictList(one_stat))
-                entries.append(to_cpu(entry))
-
-        return entries
-
-    def _load_log(self, subfolder, args):
-        if os.path.isdir(subfolder):
-            all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-            if len(all_log_files) == 0:
-                return None
-            # First log file.
-            log_file = all_log_files[0]
-        else:
-            log_file = subfolder
-
-        entry = defaultdict(list)
-        entry["folder"] = subfolder
-
-        has_one = False
-        with open(log_file, "r") as f:
-            for line in f:
-                for d in self.log_converter:
-                    m = d["match"].search(line)
-                    if not m:
-                        continue
-
-                    for key_act, val_act in d["action"]:
-                        entry[eval(key_act)].append(eval(val_act))
-                    has_one = True
-
-        if has_one:
-            return [ dict(entry) ]
-        else:
-            return None
-
-    def _load_json(self, subfolder, args):
-        all_log_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-        if len(all_log_files) == 0:
-            return None
-
-        log_file = all_log_files[0]
-        entry = defaultdict(list)
-        entry["folder"] = subfolder
-
-        cnt = 0
-        with open(log_file, "r") as f:
-            for line in f:
-                index = line.find(args.json_prefix)
-
-                if index < 0:
-                    continue
-
-                this_entry = json.loads(line[index + len(args.json_prefix):])
-
-                for k, v in this_entry.items():
-                    entry[k].append(v)
-
-                cnt += 1
-
-        if cnt > 0:
-            return [ dict(entry) ]
-        else:
-            return None
-
-    def _load_cfg(self, subfolder):
-        ''' Return list [ "key=value" ] '''
-        if not os.path.isdir(subfolder):
-            # If it is not a dir, then just read from its filename.
-            s = os.path.splitext(os.path.basename(subfolder))[0]
-            cfg = [ m for m in filename_cfg_matcher.findall(s) ]
-            cfg = [ v.strip("_") for v in cfg ]
-            return cfg
-
-        if os.path.exists(os.path.join(subfolder, ".hydra")):
-            return yaml.safe_load(open(os.path.join(subfolder, ".hydra/overrides.yaml"), "r"))
-
-        if os.path.exists(os.path.join(subfolder, "multirun.yaml")):
-            multirun_info = yaml.safe_load(open(os.path.join(subfolder, "multirun.yaml")))
-            return multirun_info["hydra"]["overrides"]["task"]
-
-        # Last resort.. read *.log file directly to get the parameters.
-        num_files = list(glob.glob(os.path.join(subfolder, "*.log")))
-        assert len(num_files) > 0
-        log_file = num_files[0]
-        text = None
-        for line in open(log_file):
-            if text is None:
-                if not line.startswith("[") and not line.startswith(" "):
-                    text = line
-            else:
-                if line.startswith("["):
-                    break
-                text += line
-
-        assert text is not None
-        overrides = yaml.safe_load(text)
-        # From dict to list of key=value
-        return [ f"{k}={v}" for k, v in overrides.items() if not isinstance(v, (dict, list)) ]
-
+ 
     def load_one(self, params):
         subfolder = params["subfolder"]
         args = params["args"]
-        self.log_converter = params["log_converter"]
+        check_result_funcs = params.get("check_result_funcs", None)
+        if check_result_funcs is None:
+            check_result_funcs = load_customized_processing(subfolder, args)
 
-        overrides = self._load_cfg(subfolder)
+        overrides = MultiRunUtil.load_cfg(subfolder)
         if len(overrides) == 0:
             return None
 
@@ -268,45 +128,36 @@ class LogProcessor:
                 for line in open(sweep_filename, "r"):
                     first_group["command"] = line.strip()
                     break
+            
+        entry = dict()
+        for key, func in check_result_funcs.items():
+            if args.result_group == "*" or key in args.result_group.split(","):
+                try:
+                    entry.update(func(subfolder))
+                except:
+                    pass
 
-        if args.loader is None:
-            # Try them one by one. 
-            entries = self._load_tensorboard(subfolder, args)
-            if entries is None:
-                entries = self._load_json(subfolder, args)
-            if entries is None:
-                entries = self._load_checkpoint(subfolder, args)
-            if entries is None:
-                entries = self._load_log(subfolder, args)
-        else:
-            entries = eval(f"self._load_{args.loader}(subfolder, args)")
-
-        if entries is None:
+        if entry is None or len(entry) == 0:
             return None
 
-        for entry in entries:
-            entry.update(config)
+        entry.update(config)
+        if "folder" not in entry:
+            entry["folder"] = subfolder 
 
         if first_group is not None:
-            entries[0]["_first"] = first_group
+            entry["_first"] = first_group
 
-        return entries
+        return entry
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--logdirs", type=str)
-    parser.add_argument("--num_process", type=int, default=32)
+    parser.add_argument("logdirs", type=str)
+    parser.add_argument("--num_process", type=int, default=1)
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
-    parser.add_argument("--update_all", default=False, action="store_true", help="Update all existing summaries")
     parser.add_argument("--no_sub_folder", action="store_true")
-    parser.add_argument("--path_outside_checkpoint", action="store_true")
-    parser.add_argument("--loader", default=None, choices=["tensorboard", "json", "log", "checkpoint"])
-    parser.add_argument("--json_prefix", default="json_stats: ")
-    parser.add_argument("--tb_choice", default="largest", choices=["largest", "latest", "earliest", "all"])
-    parser.add_argument("--tb_folder", type=str, default="stats")
-    parser.add_argument("--log_regexpr_json", type=str, default=None)
     parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
-    parser.add_argument("--summary_file", default="summary.pth", choices=["stats.pickle", "summary.pth", "checkpoint.pth.tar"])
+    parser.add_argument("--module_checkresult", type=str, default=None, help="Specify the module .py file that contains _attr_multirun used to summarize the results.")
+    parser.add_argument("--result_group", type=str, default="default", help="group of results to check, separated by comma, or just * (meaning all)")
 
     args = parser.parse_args()
 
@@ -314,34 +165,13 @@ def main():
         os.mkdir(args.output_dir)
 
     log_processor = LogProcessor()
-
-    logdirs = []
-    if args.update_all:
-        for summary_file in glob.glob(os.path.join(args.output_dir, "*")):
-            print(f"Collecting {summary_file} for updating")
-            basename = os.path.basename(summary_file)
-            basename = os.path.splitext(basename)[0]
-            logdirs.append(basename.replace("_", "/"))
-    elif args.path_outside_checkpoint:
-        logdirs = args.logdirs.split(",")
-    else:
-        logdirs = utils.parse_logdirs(args.logdirs)
-
-    if args.log_regexpr_json is not None:
-        data = json.load(open(args.log_regexpr_json, "r"))
-        log_converter = [ dict(match=re.compile(d["match"]), action=d["action"]) for d in data ]
-    else:
-        log_converter = None
+    logdirs = utils.parse_logdirs(args.logdirs)
 
     s = ""
-    for root in logdirs:
-        print(f"Processing {root}")
-        df_name = root.replace("/", "_")
-
-        if not args.path_outside_checkpoint:
-            curr_path = os.path.join(utils.get_checkpoint_output_path(), root)
-        else:
-            curr_path = root
+    for curr_path in logdirs:
+        print(f"Processing {curr_path}")
+        curr_path = utils.preprocess_logdir(curr_path)
+        df_name = curr_path.replace("/", "_")
 
         if args.no_sub_folder:
             subfolders = [ curr_path ]
@@ -350,25 +180,43 @@ def main():
         else:
             subfolders = [ subfolder for subfolder in glob.glob(os.path.join(curr_path, "*")) if not subfolder.startswith('.') and os.path.isdir(subfolder) ]
 
+        # call to get check_module for subfolder
+        if len(subfolders) == 0:
+            continue
+
         # test = log_processor.load_one(dict(subfolder=subfolders[0], args=args, first=True))
         res = []
         if args.num_process == 1:
+            check_result_funcs = load_customized_processing(subfolders[0], args)
             # Do not use multi-processing.
             for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
-                entry = log_processor.load_one(dict(subfolder=subfolder, args=args, log_converter=log_converter, first= (i == 0)))
+                arguments = dict(
+                    subfolder=subfolder, 
+                    check_result_funcs=check_result_funcs, 
+                    args=args, 
+                    first= (i == 0)
+                ) 
+
+                entry = log_processor.load_one(arguments)
                 if entry is not None:
-                    res += entry
+                    res.append(entry)
         else:
             pool = mp.Pool(args.num_process)
             try:
                 num_folders = len(subfolders)
                 chunksize = (num_folders + args.num_process - 1) // args.num_process
                 print(f"Chunksize: {chunksize}")
-                arguments = [ dict(subfolder=subfolder, args=args, log_converter=log_converter, first= (i == 0)) for i, subfolder in enumerate(subfolders) ]
+                arguments = [ 
+                    dict(
+                        subfolder=subfolder, 
+                        args=args, 
+                        first= (i == 0)
+                    ) for i, subfolder in enumerate(subfolders) 
+                ]
                 results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
                     if entry is not None:
-                        res += entry
+                        res.append(entry)
 
             except Exception as e:
                 print(e)
@@ -376,7 +224,8 @@ def main():
 
         # find all folders starts with . (but not . and ..)
         meta = {
-            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ]
+            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ],
+            "subfolders": subfolders
         }
 
         # Take the first information out.
@@ -392,7 +241,7 @@ def main():
         print(f"Size: {os.path.getsize(filename) / 2 ** 20} MB")
         print(f"Columns: {df.columns}")
 
-        s += f"# {meta}\n"
+        # s += f"# {meta}\n"
         s += f"watch.append(\"{filename}\")\n"
 
     print(s)
