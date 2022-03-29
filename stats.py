@@ -29,7 +29,7 @@ def print_top_n(col, df, params_getter):
     print(f"Top {n}/{num_rows} of {col} (each row takes average of top-{params_getter(col, 'topk_mean')} entries):")
     print(tabulate(df_sorted.head(n), headers='keys'))
 
-def print_col_infos(df):
+def print_col_infos(df, additional_sweep_vars=[]):
     # Print out possible values in the columns. 
     cond_vars = {}
     sweep_vars = {}
@@ -42,6 +42,10 @@ def print_col_infos(df):
                 cond_vars.update(s)
             else:
                 sweep_vars.update(s)
+        elif name in additional_sweep_vars:
+            rec = sorted(column.unique())
+            sweep_vars[name] = rec 
+            
     print()
     print("Conditional variables: ")
     for k, v in cond_vars.items():
@@ -142,7 +146,11 @@ class FolderAggFunc:
         self.max_simple = max_simple
 
     def agg(self, series):
-        ss = sorted([ int(os.path.basename(f)) for f in series ])
+        try:
+            ss = sorted([ int(os.path.basename(f)) for f in series ])
+        except:
+            ss = [0] 
+
         if len(ss) == 0:
             return "[0]"
 
@@ -195,6 +203,7 @@ def main():
     parser.add_argument("--print_top_n", action="store_true")
     parser.add_argument("--use_latex_agg", action="store_true")
     parser.add_argument("--save_grouped_table", action="store_true")
+    parser.add_argument("--additional_sweep_vars", type=str, default="")
     parser.add_argument("--iter_thres", type=str, default="", help="specifying 'iter_thres acc=300' means that a record will be included if its acc entry has more than 300 entries.")
 
     command_line = " ".join(sys.argv)
@@ -285,7 +294,7 @@ def main():
         df = df.astype(types_convert)
 
         # Print information in each column 
-        cond_vars, sweep_vars = print_col_infos(df)
+        cond_vars, sweep_vars = print_col_infos(df, additional_sweep_vars=args.additional_sweep_vars.split(","))
         groups = get_group_spec(args.groups, sweep_vars)
         if args.groups == "/":
             groups = reorder_group(groups)

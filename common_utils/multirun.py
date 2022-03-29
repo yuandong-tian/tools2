@@ -5,6 +5,7 @@ from collections import defaultdict
 import importlib
 import time
 import yaml
+import json
 import re
 import glob
 import os
@@ -132,23 +133,16 @@ class MultiRunUtil:
         else:
             log_file = subfolder
 
-        sec_diff = time.time() - os.path.getmtime(log_file)
-        td = timedelta(seconds=sec_diff)
-
-        entry = defaultdict(list)
-        entry["modified_since"] = str(td)
-
-        return entry, log_file
-
+        return log_file
 
     @classmethod
-    def load_regex(cls, subfolder, regex_list, load_submitit_log=False):
-        init_entry, log_file = cls.get_log_file(subfolder, load_submitit_log=load_submitit_log)
+    def get_modified_since(cls, log_file):
+        sec_diff = time.time() - os.path.getmtime(log_file)
+        td = timedelta(seconds=sec_diff)
+        return td
 
-        entry = deepcopy(init_entry)
-        entry_len = 0
-        entries = []
-
+    @classmethod
+    def get_logfile_longest_section(cls, log_file):
         def detect_job_preempt(line):
             if line.find(gJobStartLine) >= 0:
                 return True
@@ -158,56 +152,46 @@ class MultiRunUtil:
             else:
                 return False
 
-        # hack = os.path.basename(subfolder) in ["74"]
         with open(log_file, "r") as f:
-            for line in f:
-                # if things are preempted, restart the record and keep only the longest one.
-                if detect_job_preempt(line) and entry_len > 0:
-                    entries.append((entry, entry_len))
-                    entry = deepcopy(init_entry)
-                    entry_len = 0
-                    continue
-                
-                for d in regex_list:
-                    m = d["match"].search(line)
-                    if not m:
-                        continue
+            lines = f.readlines() 
 
-                    for key_act, val_act in d["action"]:
-                        entry[key_act].append(eval(val_act))
-                    entry_len += 1
+        sections = []
+        last_start = 0
+        for i, line in enumerate(lines):
+            # if things are preempted, restart the record and keep only the longest one.
+            if detect_job_preempt(line):
+                sections.append((last_start, i))
+                last_start = i
 
-        entries.append((entry, entry_len))
-        # find the longest record
-        best_entry, best_len = sorted(entries, key=lambda x: x[1])[-1]
-        if best_len >= 1:
-            return best_entry
-        else:
-            return None
+        # including the last line
+        sections.append((last_start, i + 1))
+        # pick the longest section.
+        longest_start, longest_end = sorted(sections, key=lambda x: x[1] - x[0])[-1]
+        return lines[longest_start:longest_end]
 
     @classmethod
-    def load_inline_json(cls, subfolder, json_prefix="json_stats: ", load_submitit_log=False):
-        entry, log_file = cls.get_log_file(subfolder, load_submitit_log=load_submitit_log)
+    def load_regex(cls, subfolder, lines, regex_list):
+        # hack = os.path.basename(subfolder) in ["74"]
+        entry = defaultdict(list)
+        has_data = False
+        for line in lines:
+            for d in regex_list:
+                m = d["match"].search(line)
+                if m:
+                    has_data = True
+                    for key_act, val_act in d["action"]:
+                        entry[key_act].append(eval(val_act))
 
-        cnt = 0
-        with open(log_file, "r") as f:
-            for line in f:
-                index = line.find(json_prefix)
+        return entry if has_data else None
 
-                if index < 0:
-                    continue
+    @classmethod
+    def load_df(cls, subfolder, lines, df_matcher):
+        for line in lines:
+            m = df_matcher["match"].search(line)
+            if m:
+                return df_matcher["action"](subfolder, m)
 
-                this_entry = json.loads(line[index + len(json_prefix):])
-
-                for k, v in this_entry.items():
-                    entry[k].append(v)
-
-                cnt += 1
-
-        if cnt > 0:
-            return dict(entry)
-        else:
-            return None
+        return []
 
     @classmethod
     def load_tensorboard(cls, subfolder, tb_folder="stats.tb", tb_choice="largest"):

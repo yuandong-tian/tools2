@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import math
 import utils
+import re
 import pandas as pd
 
 from utils import signature
@@ -51,8 +52,13 @@ def process_func(row, cols, params_per_col, first_k_iter):
         return row
 
     # For config str, remove 'githash' and 'sweep_filename'
-    config = config2dict(row["_config_str"])
-    row["_config_str"] = ",".join([f"{k}={v}" for k, v in config.items() if not k in ('githash', 'sweep_filename')])
+    prefix = "override_"
+    configs = []
+    for key, value in row.items():
+        if key.startswith(prefix) and not key[len(prefix):] in ('githash', 'sweep_filename'):
+            configs.append(key[len(prefix):] + "=" + str(value).replace(",", "_"))
+
+    row["_config_str"] = ",".join(configs)
 
     if first_k_iter is not None:
         iters = first_k_iter.split(",")

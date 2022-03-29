@@ -1,3 +1,4 @@
+from tokenize import group
 from tensorboard.backend.event_processing import event_accumulator
 from collections import defaultdict
 from datetime import timedelta
@@ -5,10 +6,9 @@ import re
 import time
 import os
 import sys
-import torch
-import json
 import glob
 import pandas as pd
+import torch
 import yaml
 import multiprocessing as mp
 import tqdm
@@ -78,19 +78,27 @@ def listDict2DictList(stats):
                     v.append(None)
     return entry
 
+def get_group_choice(subfolder, args):
+    # Pick which result_group we want to use to grep results.
+    attr = load_attr_multirun(subfolder, args)
+    sel_groups = args.sel_result_group.split(",") if args.sel_result_group is not None else attr["default_result_group"] 
+
+    # only allow either a dp group or a event group
+    sel_groups_df = [ attr["result_group"][key][1] for key in sel_groups if attr["result_group"][key][0] == "df" ]
+    sel_groups_event = [ attr["result_group"][key][1] for key in sel_groups if attr["result_group"][key][0] == "event" ]
+    if len(sel_groups_df) > 0:
+        group_choice = ("df", sel_groups_df)
+    else:
+        group_choice = ("event", sel_groups_event)
+
+    return group_choice
 
 # Load customized processing. 
-def load_customized_processing(subfolder, args):
+def load_attr_multirun(subfolder, args):
     mdl = MultiRunUtil.load_check_module(subfolder, filename=args.module_checkresult)
-    default_attr_multirun = {
-        "check_result": {
-            "performance": MultiRunUtil.load_inline_json 
-        }
-    }
-
-    attr_multirun = getattr(mdl, "_attr_multirun", default_attr_multirun)
-    # Check attr_multirun
-    return attr_multirun["check_result"]
+    attr_multirun = getattr(mdl, "_attr_multirun", None)
+    assert attr_multirun is not None, f"_attr_multirun needs to be present for sweeping!" 
+    return attr_multirun 
 
     # we import all names that don't begin with _ and main
     # names = [x for x in mdl.__dict__ if not x.startswith("_") and not x == "main"]
@@ -99,65 +107,65 @@ def load_customized_processing(subfolder, args):
     # globals().update({k: getattr(mdl, k) for k in names})
     # return mdl._check_result(subfolder, args)
 
-
 class LogProcessor:
     def __init__(self):
         pass
  
-    def load_one(self, params):
-        subfolder = params["subfolder"]
-        args = params["args"]
-        check_result_funcs = params.get("check_result_funcs", None)
-        if check_result_funcs is None:
-            check_result_funcs = load_customized_processing(subfolder, args)
+    def load_one(self, arguments):
+        subfolder, args, group_choice = arguments 
 
+        # Load overridden parameters. 
         overrides = MultiRunUtil.load_cfg(subfolder)
-        if len(overrides) == 0:
-            return None
+
+        group_choice = group_choice or get_group_choice(subfolder, args)
 
         config_str = ",".join(overrides)
         config = dict([ ("override_" + entry).split('=') for entry in overrides ])
         config["_config_str"] = config_str
+        config["folder"] = subfolder
         # print(config)
 
-        first_group = None
-        if params["first"] and "override_sweep_filename" in config:
-            first_group = dict()
-            sweep_filename = config.get("override_sweep_filename", '')
-            if sweep_filename != '':
-                for line in open(sweep_filename, "r"):
-                    first_group["command"] = line.strip()
-                    break
-            
-        entry = dict()
-        for key, func in check_result_funcs.items():
-            if args.result_group == "*" or key in args.result_group.split(","):
+        # Get log file. 
+        log_file = MultiRunUtil.get_log_file(subfolder)
+        config["modified_since"] = MultiRunUtil.get_modified_since(log_file)
+
+        # Get longest sections. 
+        lines = MultiRunUtil.get_logfile_longest_section(log_file)
+
+        entries = []
+        if group_choice[0] == "df":
+            for matcher in group_choice[1]:
+                entries.extend(MultiRunUtil.load_df(subfolder, lines, matcher))
+        elif group_choice[0] == "event":
+            entry = dict()
+            for matcher in group_choice[1]:
                 try:
-                    entry.update(func(subfolder))
+                    new_entry = MultiRunUtil.load_regex(subfolder, lines, matcher)
+                    if new_entry is not None:
+                        entry.update(new_entry)
                 except:
                     pass
 
-        if entry is None or len(entry) == 0:
-            return None
+            if len(entry) > 0:
+                entries = [entry]
+        else:
+            raise NotImplementedError(f"{group_choice[0]} not implemented!")
 
-        entry.update(config)
-        if "folder" not in entry:
-            entry["folder"] = subfolder 
+        # Also add the sweep parameters, if these parameters are not set yet. 
+        for entry in entries:
+            for k, v in config.items():
+                if k not in entry: 
+                    entry[k] = v
 
-        if first_group is not None:
-            entry["_first"] = first_group
-
-        return entry
+        return entries
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("logdirs", type=str)
     parser.add_argument("--num_process", type=int, default=1)
     parser.add_argument("--output_dir", type=str, default=utils.get_checkpoint_summary_path())
-    parser.add_argument("--no_sub_folder", action="store_true")
-    parser.add_argument("--wildcard_as_subfolder", type=str, default=None, help="can be '*.txt' etc")
     parser.add_argument("--module_checkresult", type=str, default=None, help="Specify the module .py file that contains _attr_multirun used to summarize the results.")
-    parser.add_argument("--result_group", type=str, default="default", help="group of results to check, separated by comma, or just * (meaning all)")
+    parser.add_argument("--sel_result_group", type=str, default=None, help="group of results to check, separated by comma, otherwise default in _attr_multirun")
 
     args = parser.parse_args()
 
@@ -173,67 +181,67 @@ def main():
         curr_path = utils.preprocess_logdir(curr_path)
         df_name = curr_path.replace("/", "_")
 
-        if args.no_sub_folder:
+        if curr_path.find("*") >= 0 or curr_path.find("?") >= 0:
+            subfolders = [ f for f in glob.glob(curr_path) if os.path.isdir(f) ]
+        elif not os.path.exists(os.path.join(curr_path, "multirun.yaml")):
+            # no subfolders
             subfolders = [ curr_path ]
-        elif args.wildcard_as_subfolder is not None:
-            subfolders = [ f for f in glob.glob(os.path.join(curr_path, args.wildcard_as_subfolder)) ] 
         else:
+            # regular subfolders. 
             subfolders = [ subfolder for subfolder in glob.glob(os.path.join(curr_path, "*")) if not subfolder.startswith('.') and os.path.isdir(subfolder) ]
 
         # call to get check_module for subfolder
         if len(subfolders) == 0:
             continue
 
+        # Find out which result groups to use. 
+        # Examplar result group in  _attr_multirun:  
+        #  "result_group": {
+        #     "stats_details" : ("df", _matcher),
+        #     "stats_train_eval": ("event", _matcher_event),
+        #     "stats_representation": ("event", _matcher_event2)
+        # },
+        # args.sel_result_group is used to filtered out any keys that are not useful 
+        # note that if args.sel_result_group picks any df entry, then all the other entries will be neglected. 
+
         # test = log_processor.load_one(dict(subfolder=subfolders[0], args=args, first=True))
         res = []
         if args.num_process == 1:
-            check_result_funcs = load_customized_processing(subfolders[0], args)
             # Do not use multi-processing.
-            for i, subfolder in tqdm.tqdm(enumerate(subfolders), total=len(subfolders)):
-                arguments = dict(
-                    subfolder=subfolder, 
-                    check_result_funcs=check_result_funcs, 
-                    args=args, 
-                    first= (i == 0)
-                ) 
-
-                entry = log_processor.load_one(arguments)
-                if entry is not None:
-                    res.append(entry)
+            group_choice = get_group_choice(subfolders[0], args)
+            for subfolder in tqdm.tqdm(subfolders, total=len(subfolders)):
+                entry = log_processor.load_one((subfolder, args, group_choice))
+                res.extend(entry)
         else:
             pool = mp.Pool(args.num_process)
             try:
                 num_folders = len(subfolders)
                 chunksize = (num_folders + args.num_process - 1) // args.num_process
                 print(f"Chunksize: {chunksize}")
-                arguments = [ 
-                    dict(
-                        subfolder=subfolder, 
-                        args=args, 
-                        first= (i == 0)
-                    ) for i, subfolder in enumerate(subfolders) 
-                ]
+                arguments = [ (subfolder, args, None) for subfolder in subfolders ] 
                 results = pool.imap_unordered(log_processor.load_one, arguments, chunksize=chunksize)
                 for entry in tqdm.tqdm(results, total=num_folders):
-                    if entry is not None:
-                        res.append(entry)
+                    res.extend(entry)
 
             except Exception as e:
                 print(e)
                 print(get_mem_usage())
 
-        # find all folders starts with . (but not . and ..)
-        meta = {
-            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ],
-            "subfolders": subfolders
-        }
-
-        # Take the first information out.
-        if "_first" in res[0]:
-            meta.update(res[0]["_first"])
-            del res[0]["_first"]
-
         df = pd.DataFrame(res)
+
+        command = None
+        if "override_sweep_filename" in df.columns and df.shape[0] > 0:
+            sweep_filename = df["override_sweep_filename"][0]
+            if sweep_filename != '':
+                for line in open(sweep_filename, "r"):
+                    command = line.strip()
+                    break
+        meta = {
+            # find all folders starts with . (but not . and ..)
+            "hidden": [ os.path.basename(f) for f in glob.glob(os.path.join(curr_path, ".??*")) ],
+            "subfolders": subfolders,
+            "command": command
+        }
 
         filename = os.path.join(args.output_dir, df_name + ".pkl")
         pickle.dump(dict(df=df, meta=meta), open(filename, "wb"))
