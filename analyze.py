@@ -148,6 +148,9 @@ class LogProcessor:
 
             if len(entry) > 0:
                 entries = [entry]
+        elif group_choice[0] == "func":
+            for matcher in group_choice[1]:
+                entries.extend(matcher(subfolder))
         else:
             raise NotImplementedError(f"{group_choice[0]} not implemented!")
 
