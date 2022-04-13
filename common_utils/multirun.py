@@ -147,7 +147,7 @@ class MultiRunUtil:
             if line.find(gJobStartLine) >= 0:
                 return True
 
-            if line.find("[submitit][WARNING]") >= 0:
+            if line.find("[submitit][WARNING]") >= 0 and line.find("Bypassing") < 0:
                 return line.find("SIGTERM") >= 0 or line.find("SIGUSR1") >= 0 or line.find("SIGCONT") >= 0
             else:
                 return False
