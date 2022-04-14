@@ -170,7 +170,7 @@ class MultiRunUtil:
         return lines[longest_start:longest_end]
 
     @classmethod
-    def load_regex(cls, subfolder, lines, regex_list):
+    def load_regex(cls, config, lines, regex_list):
         # hack = os.path.basename(subfolder) in ["74"]
         entry = defaultdict(list)
         has_data = False
@@ -185,11 +185,11 @@ class MultiRunUtil:
         return entry if has_data else None
 
     @classmethod
-    def load_df(cls, subfolder, lines, df_matcher):
+    def load_df(cls, config, lines, df_matcher):
         for line in lines:
             m = df_matcher["match"].search(line)
             if m:
-                return df_matcher["action"](subfolder, m)
+                return df_matcher["action"](config, m)
 
         return []
 

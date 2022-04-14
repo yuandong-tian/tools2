@@ -121,7 +121,7 @@ class LogProcessor:
         group_choice = group_choice or get_group_choice(subfolder, args)
 
         config = {}
-        config["_config_str"] = json.dumps({ "override_" + k : v for k, v in overrides.items() })
+        config["_config_str"] = json.dumps({ "override_" + item.split("=")[0] : item.split("=")[1] for item in overrides })
         config["folder"] = subfolder
         # print(config)
 
@@ -135,12 +135,12 @@ class LogProcessor:
         entries = []
         if group_choice[0] == "df":
             for matcher in group_choice[1]:
-                entries.extend(MultiRunUtil.load_df(subfolder, lines, matcher))
+                entries.extend(MultiRunUtil.load_df(config, lines, matcher))
         elif group_choice[0] == "event":
             entry = dict()
             for matcher in group_choice[1]:
                 try:
-                    new_entry = MultiRunUtil.load_regex(subfolder, lines, matcher)
+                    new_entry = MultiRunUtil.load_regex(config, lines, matcher)
                     if new_entry is not None:
                         entry.update(new_entry)
                 except:
@@ -150,7 +150,7 @@ class LogProcessor:
                 entries = [entry]
         elif group_choice[0] == "func":
             for matcher in group_choice[1]:
-                entries.extend(matcher(subfolder))
+                entries.extend(matcher(config))
         else:
             raise NotImplementedError(f"{group_choice[0]} not implemented!")
 
