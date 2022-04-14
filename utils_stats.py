@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import math
 import utils
+import json
 import re
 import pandas as pd
 
@@ -30,7 +31,7 @@ def config_filter(row, config_strs, iter_thres):
     if config_strs is None:
         return True
 
-    config = config2dict(row["_config_str"])
+    config = json.loads(row["_config_str"])
 
     for k, v in config_strs.items():
         if config.get(k, None) != v:

@@ -2,6 +2,7 @@ from tokenize import group
 from tensorboard.backend.event_processing import event_accumulator
 from collections import defaultdict
 from datetime import timedelta
+import json
 import re
 import time
 import os
@@ -119,9 +120,8 @@ class LogProcessor:
 
         group_choice = group_choice or get_group_choice(subfolder, args)
 
-        config_str = ",".join(overrides)
-        config = dict([ ("override_" + entry).split('=') for entry in overrides ])
-        config["_config_str"] = config_str
+        config = {}
+        config["_config_str"] = json.dumps({ "override_" + k : v for k, v in overrides.items() })
         config["folder"] = subfolder
         # print(config)
 
