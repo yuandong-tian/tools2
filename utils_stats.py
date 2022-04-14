@@ -34,7 +34,7 @@ def config_filter(row, config_strs, iter_thres):
     config = json.loads(row["_config_str"])
 
     for k, v in config_strs.items():
-        if config.get(k, None) != v:
+        if config.get("override_" + k, None) != v:
             return False
     return True
 
