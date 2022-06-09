@@ -87,10 +87,14 @@ def get_group_choice(subfolder, args):
     # only allow either a dp group or a event group
     sel_groups_df = [ attr["result_group"][key][1] for key in sel_groups if attr["result_group"][key][0] == "df" ]
     sel_groups_event = [ attr["result_group"][key][1] for key in sel_groups if attr["result_group"][key][0] == "event" ]
+    sel_groups_func = [ attr["result_group"][key][1] for key in sel_groups if attr["result_group"][key][0] == "func" ]
+
     if len(sel_groups_df) > 0:
         group_choice = ("df", sel_groups_df)
-    else:
+    elif len(sel_groups_event) > 0:
         group_choice = ("event", sel_groups_event)
+    else:
+        group_choice = ("func", sel_groups_func)
 
     return group_choice
 
@@ -121,7 +125,9 @@ class LogProcessor:
         group_choice = group_choice or get_group_choice(subfolder, args)
 
         config = {}
-        config["_config_str"] = json.dumps({ "override_" + item.split("=")[0] : item.split("=")[1] for item in overrides })
+        overrides_mapping = { "override_" + item.split("=")[0] : item.split("=")[1] for item in overrides }
+        config.update(overrides_mapping)
+        config["_config_str"] = json.dumps(overrides_mapping)
         config["folder"] = subfolder
         # print(config)
 

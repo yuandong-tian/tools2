@@ -296,8 +296,6 @@ def main():
         # Print information in each column 
         cond_vars, sweep_vars = print_col_infos(df, additional_sweep_vars=args.additional_sweep_vars.split(","))
         groups = get_group_spec(args.groups, sweep_vars)
-        if args.groups == "/":
-            groups = reorder_group(groups)
 
         has_modified_since = "modified_since" in df 
 
@@ -331,6 +329,12 @@ def main():
             for key_stat in key_stats:
                 print(f"Table for {key_stat}. Rows: {args.rows}, Cols: {args.cols}")
                 print(print_latex(df, row_names, row_choices, col_names, col_choices, key_stat, precision=args.precision))
+
+            if args.groups == "/" or args.groups is None:
+                groups = row_names + col_names 
+
+        elif args.groups == "/":
+            groups = reorder_group(groups)
 
         # Print out group means.
         if groups is not None:

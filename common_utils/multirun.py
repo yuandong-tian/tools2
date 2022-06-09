@@ -81,6 +81,10 @@ class MultiRunUtil:
         return yaml.safe_load(open(os.path.join(subfolder, ".hydra/config.yaml"), "r"))
 
     @classmethod
+    def load_omega_conf(cls, subfolder):
+        return OmegaConf.load(os.path.join(subfolder, ".hydra/config.yaml"))
+
+    @classmethod
     def load_cfg(cls, subfolder):
         ''' Return list [ "key=value" ] '''
         if not os.path.isdir(subfolder):
@@ -243,6 +247,7 @@ class MultiRunUtil:
 
         spec = importlib.util.spec_from_file_location("", main_file_checkresult)
         mdl = importlib.util.module_from_spec(spec)
+        sys.path.append(os.path.abspath(os.path.dirname(main_file_checkresult)))
         spec.loader.exec_module(mdl)
 
         return mdl
