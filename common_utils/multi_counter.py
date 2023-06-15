@@ -14,10 +14,10 @@ class ValueStats:
         self.summation += v
         self.sumSqr += v * v
         
-        if v > self.max_value:
+        if v >= self.max_value:
             self.max_value = v
             self.max_idx = self.counter
-        if v < self.min_value:
+        if v <= self.min_value:
             self.min_value = v
             self.min_idx = self.counter
 
