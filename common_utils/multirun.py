@@ -43,7 +43,7 @@ def pretty_print_cmd(args):
     return s
 
 def pretty_print_args(args):
-    return OmegaConf.to_yaml(args)
+    return OmegaConf.to_yaml(args, resolve=True)
 
 gJobStartLine = "===*** Job start ***==="
 

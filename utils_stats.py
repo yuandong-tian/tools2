@@ -31,7 +31,13 @@ def config_filter(row, config_strs, iter_thres):
     if config_strs is None:
         return True
 
-    config = json.loads(row["_config_str"])
+    try:
+        config = json.loads(row["_config_str"])
+    except:
+        config = config2dict(row["_config_str"])
+
+    #import pdb
+    #pdb.set_trace()
 
     for k, v in config_strs.items():
         if config.get("override_" + k, None) != v:
