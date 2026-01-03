@@ -12,16 +12,16 @@ import os
 import sys
 from copy import deepcopy
 
-def get_git_hash():
+def get_git_hash(current_path="./"):
     try:
-        return check_output("git -C ./ log --pretty=format:'%H' -n 1", shell=True).decode('utf-8')
+        return check_output(f"git -C {current_path} log --pretty=format:'%H' -n 1", shell=True).decode('utf-8')
     except:
         return ""
 
-def get_git_diffs():
+def get_git_diffs(current_path="./"):
     try:
-        active_diff = check_output("git diff", shell=True).decode('utf-8')
-        staged_diff = check_output("git diff --cached", shell=True).decode('utf-8')
+        active_diff = check_output(f"cd {current_path}; git diff", shell=True).decode('utf-8')
+        staged_diff = check_output(f"cd {current_path}; git diff --cached", shell=True).decode('utf-8')
         return active_diff + "\n" + staged_diff
     except:
         return ""
@@ -47,7 +47,7 @@ def pretty_print_args(args):
 
 gJobStartLine = "===*** Job start ***==="
 
-def print_info(args):
+def print_info(args, current_path="./"):
     return f'''
 {gJobStartLine}
 Command line:
@@ -55,8 +55,9 @@ Command line:
 {pretty_print_cmd(sys.argv)}
     
 Working dir: {os.getcwd()}
-{get_git_hash()}
-{get_git_diffs()}
+Git path: {current_path}
+{get_git_hash(current_path)}
+{get_git_diffs(current_path)}
 {pretty_print_args(args)}
 '''
     
